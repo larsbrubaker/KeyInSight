@@ -13,9 +13,18 @@ The original is a macOS Swift/SwiftUI app. This port is Rust +
 
 ## Status
 
-**Scaffold — the port has not started yet.** The workspace, CI, WASM/Pages
-pipeline, and porting rules (see [CLAUDE.md](CLAUDE.md)) are in place; the
-demo site is a status page until the training loop lands.
+**Phase 1 port complete for the core training loop.** All engine modules
+are ported from Swift with their test suites (Core, Score, Engine +
+SessionEngine, Skill, Persistence, Audio DSP, Input, Notation, UI): the
+adaptive trainer runs end-to-end — generated exercises engraved via
+[verovio-rust](https://github.com/larsbrubaker/verovio-rust), self-paced
+and tempo modes, the skill model with unlocks, drills, free play, the
+bundled 18-piece repertoire, per-user profiles, and computer-keyboard
+input (A S D F G H J K = C4–C5, W E T Y U = sharps, Z/X octave).
+
+Still to come (Phase 2): native MIDI (midir) and audio out (cpal), Web
+MIDI / WebAudio in the browser, the mic backend, the calibration sheet,
+and engraving refinements.
 
 ## Layout
 

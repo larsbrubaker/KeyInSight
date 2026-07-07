@@ -13,6 +13,9 @@ use std::rc::Rc;
 
 use crate::notation::{NotationRenderer, Rendered};
 
+/// Hover callback: (kind, element id); empty strings end the hover.
+pub type InspectCallback = Box<dyn Fn(&str, &str)>;
+
 /// Feedback / heat-map state of one note element. Colors mirror the Swift
 /// page CSS exactly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,7 +82,7 @@ pub struct NotationController {
     follow_log: Vec<usize>,
     /// Called when the pointer hovers a notation element: (kind, id).
     /// Fires with empty strings when the hover ends.
-    pub on_inspect: Option<Box<dyn Fn(&str, &str)>>,
+    pub on_inspect: Option<InspectCallback>,
     last_hover_key: RefCell<String>,
 }
 

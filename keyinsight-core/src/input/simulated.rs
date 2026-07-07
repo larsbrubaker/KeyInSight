@@ -133,6 +133,10 @@ impl InputBackend for SimulatedKeyboardBackend {
         self.running = false;
         self.held_keys.clear();
     }
+
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        Some(self)
+    }
 }
 
 #[cfg(test)]

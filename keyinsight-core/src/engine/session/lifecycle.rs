@@ -3,6 +3,7 @@
 //! timers/dispatch queues.
 
 use crate::core::{NoteEvent, PitchSpelling, Rng64};
+use crate::input::SimulatedKeyboardBackend;
 use crate::engine::session::{
     Deferred, DrillTotals, ExerciseSummary, InputSource, PacingMode, Phase, SessionEngine,
     AUTO_ADVANCE_DELAY, AUTO_ADVANCE_UNLOCK_DELAY,
@@ -422,6 +423,37 @@ impl SessionEngine {
         if self.sweep_running {
             self.sweep_tick();
         }
+
+        // Keep the frame loop hot while time-driven work is pending
+        // (replaces the Swift timers waking the main loop).
+        if self.sweep_running
+            || !self.deferred.is_empty()
+            || self.notation.borrow().is_following()
+            || !self.event_queue.borrow().is_empty()
+        {
+            agg_gui::animation::request_draw();
+        }
+    }
+
+    /// Forward a computer-keyboard event to the simulated backend (the
+    /// Swift NSEvent monitor, re-homed to agg-gui key events). Returns true
+    /// when consumed (a mapped piano key / octave shifter).
+    pub fn handle_simulated_key(&mut self, ch: char, is_down: bool, is_repeat: bool) -> bool {
+        let now = (self.clock)();
+        let Some(sim) = self
+            .backend
+            .as_any_mut()
+            .and_then(|a| a.downcast_mut::<SimulatedKeyboardBackend>())
+        else {
+            return false;
+        };
+        let consumed = sim.handle_key(ch, is_down, is_repeat, now);
+        self.octave_offset = sim.octave_offset();
+        if consumed {
+            // Deliver immediately — feedback the same frame as the press.
+            self.tick();
+        }
+        consumed
     }
 
     fn run_deferred(&mut self, action: Deferred) {

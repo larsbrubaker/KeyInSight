@@ -1,12 +1,21 @@
 //! The user interface layer: agg-gui widgets mirroring the SwiftUI views.
 //!
-//! Ports `Sources/KeyInSight/UI/` — arriving with the UI phase of the port;
-//! pure geometry (KeyboardLayout, calibration median) lands first because
-//! the engine and tests depend on it.
+//! Ports `Sources/KeyInSight/UI/`: the training root (`app.rs`), side
+//! panel, bottom bar, piano strip, and the Library/Progress sheets. The
+//! CalibrationSheet flow (tempo latency measurement) arrives in Phase 2.
 
+pub(crate) mod app;
+pub(crate) mod bottom_bar;
+mod dynamic_label;
 mod keyboard_layout;
+mod piano_strip;
+pub(crate) mod sheets;
+pub(crate) mod side_panel;
 
+pub use app::{build_keyinsight_app, KeyInSightHandles, KeyInSightPlatform};
+pub use dynamic_label::DynamicLabel;
 pub use keyboard_layout::{KeyboardKey, KeyboardLayout};
+pub use piano_strip::PianoStripWidget;
 
 /// Median of a sample list — `CalibrationSheet.median` in Swift (the
 /// calibration flow's latency estimator). Lives here until the full

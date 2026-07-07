@@ -15,7 +15,7 @@ pub use matcher::{SelfPacedMatcher, SelfPacedOutcome};
 pub use octave_anchor::OctaveAnchor;
 pub use session::{
     default_backend_factory, BackendFactory, ExerciseSummary, InputSource, IntervalEntry,
-    PacingMode, Phase, ProgressEntry, SessionEngine,
+    PacingMode, Phase, ProgressEntry, SessionEngine, DRILL_LENGTH,
 };
 pub use tempo_matcher::{
     RhythmPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy, TempoReport,

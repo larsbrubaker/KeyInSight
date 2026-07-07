@@ -37,4 +37,10 @@ pub trait InputBackend {
     fn set_on_event(&mut self, on_event: Option<Box<dyn FnMut(NoteEvent)>>);
     fn start(&mut self);
     fn stop(&mut self);
+
+    /// Concrete-type escape hatch (the session engine forwards computer
+    /// keyboard input to the simulated backend through this).
+    fn as_any_mut(&mut self) -> Option<&mut dyn std::any::Any> {
+        None
+    }
 }

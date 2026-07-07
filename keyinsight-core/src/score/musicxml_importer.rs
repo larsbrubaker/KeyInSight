@@ -254,16 +254,15 @@ impl MusicXmlImporter {
             // aligned with the source. A short final measure is fine.
             let expected_units = beats_per_measure * 2;
             for (units, name) in [(treble_units, "treble"), (bass_units, "bass")] {
-                if units > 0 || name == "treble" {
-                    if units > expected_units
-                        || (units < expected_units && measure_index < measures.len() - 1)
-                    {
-                        return Err(ImportError::Unsupported(format!(
-                            "incomplete {} measure {} (pickup measures)",
-                            name,
-                            measure_index + 1
-                        )));
-                    }
+                if (units > 0 || name == "treble")
+                    && (units > expected_units
+                        || (units < expected_units && measure_index < measures.len() - 1))
+                {
+                    return Err(ImportError::Unsupported(format!(
+                        "incomplete {} measure {} (pickup measures)",
+                        name,
+                        measure_index + 1
+                    )));
                 }
             }
         }

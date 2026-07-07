@@ -131,6 +131,8 @@ impl InputSource {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[allow(clippy::large_enum_variant)] // one Phase lives per engine; the
+// summary payload is the point of the variant
 pub enum Phase {
     Loading,
     Playing,
