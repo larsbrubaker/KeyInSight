@@ -90,6 +90,8 @@ impl Widget for PianoStripWidget {
         let layout = engine.keyboard_layout().clone();
         let highlighted = engine.current_expected_midis().clone();
         let wrong_flash = engine.wrong_key_flash();
+        // Hear It: light the keys the playback is sounding right now.
+        let sounding = engine.playback_sounding_midis();
         drop(engine);
 
         // Key names in the bold face — the Swift
@@ -99,9 +101,12 @@ impl Widget for PianoStripWidget {
         for key in &layout.keys {
             let is_next = highlighted.contains(&key.midi);
             let is_wrong = wrong_flash == Some(key.midi);
+            let is_sounding = sounding.contains(&key.midi);
             let key_height = if key.is_black { height * 0.6 } else { height };
             let fill = if is_wrong {
                 palette::RED
+            } else if is_sounding {
+                palette::GREEN
             } else if is_next {
                 palette::KEY_BLUE
             } else if key.is_black {
@@ -123,7 +128,7 @@ impl Widget for PianoStripWidget {
             ctx.rounded_rect(x, y, w, key_height, 2.0);
             ctx.stroke();
 
-            if is_next || is_wrong {
+            if is_next || is_wrong || is_sounding {
                 ctx.set_fill_color(Color::white());
                 let name = PitchSpelling::name(key.midi);
                 let text_w = ctx

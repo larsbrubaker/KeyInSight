@@ -293,6 +293,9 @@ pub struct SessionEngine {
     pub(crate) drill_totals: DrillTotals,
     pub(crate) tempo_finish_scheduled: bool,
     pub(crate) playback_generation: i64,
+    /// Host-clock second the current Hear It playback started (drives the
+    /// keyboard strip's sounding-key highlight).
+    pub(crate) playback_started_at: f64,
 
     // Persistence (None = running without a database; the loop still works).
     pub(crate) db: Option<AppDatabase>,
@@ -398,6 +401,7 @@ impl SessionEngine {
             drill_totals: DrillTotals::new(),
             tempo_finish_scheduled: false,
             playback_generation: 0,
+            playback_started_at: 0.0,
             db,
             session_id: None,
             exercise_id: None,
@@ -467,6 +471,38 @@ impl SessionEngine {
     }
     pub fn is_playing_back(&self) -> bool {
         self.is_playing_back
+    }
+
+    /// Serialized persistence document (test support: relaunch scenarios
+    /// reopen a fresh engine over the same stored state).
+    pub fn db_document(&self) -> Option<String> {
+        self.db.as_ref().map(|db| db.serialize_document())
+    }
+
+    /// MIDI pitches sounding right now in the Hear It playback — the
+    /// keyboard strip shows them as pressed keys while the piece plays.
+    pub fn playback_sounding_midis(&self) -> Vec<u8> {
+        if !self.is_playing_back {
+            return Vec::new();
+        }
+        let Some(exercise) = &self.exercise else {
+            return Vec::new();
+        };
+        let elapsed = (self.clock)() - self.playback_started_at;
+        let unit_seconds = (60.0 / PLAYBACK_PREVIEW_BPM) / 2.0;
+        let mut sounding = Vec::new();
+        for voice in [&exercise.notes, &exercise.bass_notes] {
+            for span in crate::score::Exercise::voice_note_spans(voice) {
+                let start = span.start_units as f64 * unit_seconds;
+                let end = start + span.length_units as f64 * unit_seconds;
+                if elapsed >= start && elapsed < end {
+                    sounding.push(span.midi);
+                }
+            }
+        }
+        sounding.sort_unstable();
+        sounding.dedup();
+        sounding
     }
     pub fn self_verify_attempts(&self) -> usize {
         self.self_verify_attempts

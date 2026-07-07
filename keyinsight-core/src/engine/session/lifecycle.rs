@@ -48,7 +48,11 @@ impl SessionEngine {
             }
         }
         self.wire_and_start_backend();
-        self.next_exercise();
+        // Continue where this user left off: reopen their piece, or start
+        // a fresh adaptive exercise.
+        if !self.restore_active_piece() {
+            self.next_exercise();
+        }
     }
 
     pub(crate) fn wire_and_start_backend(&mut self) {

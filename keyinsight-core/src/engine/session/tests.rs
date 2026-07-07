@@ -260,3 +260,100 @@ fn calibration_tap_receives_simulated_keys() {
     engine.handle_simulated_key('a', false, false);
     assert_eq!(taps.borrow().len(), 1, "note-on must reach the tap hook");
 }
+
+/// Audio stub that accepts playback (NullAudioOut declines, which would
+/// keep `toggle_playback` from ever starting).
+struct AcceptingAudio;
+impl crate::audio::AudioOut for AcceptingAudio {
+    fn play_click(&self, _at: f64, _accent: bool) {}
+    fn play_smf(&self, _smf: &[u8]) -> bool {
+        true
+    }
+    fn stop_smf(&self) {}
+}
+
+/// During Hear It the keyboard strip shows the sounding keys: the first
+/// expected pitch sounds at t=0 and stops by the end of its value.
+#[test]
+fn playback_reports_sounding_midis() {
+    let (time, clock) = test_clock();
+    let mut engine = SessionEngine::new(
+        Some(AppDatabase::in_memory(NOW)),
+        Rc::new(AcceptingAudio),
+        clock,
+        default_backend_factory(),
+        42,
+    );
+    engine.start();
+    assert!(engine.playback_sounding_midis().is_empty(), "silent before playback");
+
+    let first = engine.current_expected_midi().unwrap();
+    engine.toggle_playback();
+    assert!(engine.is_playing_back());
+    *time.borrow_mut() += 0.05; // just after the first onset
+    assert!(
+        engine.playback_sounding_midis().contains(&first),
+        "first note sounds at playback start"
+    );
+
+    engine.toggle_playback(); // stop
+    assert!(engine.playback_sounding_midis().is_empty(), "silent after stop");
+}
+
+/// Relaunching continues with the same user's open piece; leaving
+/// repertoire clears the memory.
+#[test]
+fn active_piece_survives_reload() {
+    use crate::persistence::MemoryStorage;
+    use crate::score::RepertoireLibrary;
+
+    let (_, clock) = test_clock();
+    let mut engine = SessionEngine::new(
+        Some(AppDatabase::in_memory(NOW)),
+        Rc::new(NullAudioOut),
+        Rc::clone(&clock),
+        default_backend_factory(),
+        42,
+    );
+    engine.start();
+    let piece = RepertoireLibrary::bundled()
+        .into_iter()
+        .find(|p| p.slug == "gymnopedie-1")
+        .unwrap();
+    engine.start_piece(piece);
+    let snapshot = engine.db_document().expect("db present");
+
+    // Relaunch over the same stored document.
+    let mut reloaded = SessionEngine::new(
+        Some(AppDatabase::open(
+            Box::new(MemoryStorage::with_contents(snapshot)),
+            NOW + 60_000,
+        )),
+        Rc::new(NullAudioOut),
+        Rc::clone(&clock),
+        default_backend_factory(),
+        42,
+    );
+    reloaded.start();
+    assert_eq!(
+        reloaded.active_piece().map(|p| p.slug.as_str()),
+        Some("gymnopedie-1"),
+        "the open piece reopens on launch"
+    );
+
+    // Leaving repertoire clears the persisted slug.
+    reloaded.exit_repertoire();
+    let snapshot = reloaded.db_document().unwrap();
+    let mut fresh = SessionEngine::new(
+        Some(AppDatabase::open(
+            Box::new(MemoryStorage::with_contents(snapshot)),
+            NOW + 120_000,
+        )),
+        Rc::new(NullAudioOut),
+        Rc::clone(&clock),
+        default_backend_factory(),
+        42,
+    );
+    fresh.start();
+    assert!(fresh.active_piece().is_none(), "training resumes after exit");
+}

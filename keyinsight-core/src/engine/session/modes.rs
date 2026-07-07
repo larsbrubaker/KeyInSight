@@ -13,6 +13,9 @@ use crate::persistence::ExerciseRecord;
 use crate::score::{Exercise, FreePlayScore, MusicXmlEncoder, RepertoirePiece};
 
 impl SessionEngine {
+    /// Per-user setting key: the open repertoire piece's slug.
+    const ACTIVE_PIECE_SETTING: &'static str = "active_piece_slug";
+
     // --- Exercise history / diversion ---
 
     /// True when off the adaptive-training path (repertoire, free play, or
@@ -27,6 +30,7 @@ impl SessionEngine {
         self.active_piece = None;
         self.drill_remaining = None;
         self.pending_replay = None;
+        self.persist_active_piece(None);
         self.next_exercise();
     }
 
@@ -52,6 +56,7 @@ impl SessionEngine {
 
     /// Enter repertoire mode with a piece (replayable via next_exercise).
     pub fn start_piece(&mut self, piece: RepertoirePiece) {
+        self.persist_active_piece(Some(&piece.slug));
         self.active_piece = Some(piece);
         self.is_free_play = false;
         self.drill_remaining = None;
@@ -60,7 +65,37 @@ impl SessionEngine {
 
     pub fn exit_repertoire(&mut self) {
         self.active_piece = None;
+        self.persist_active_piece(None);
         self.next_exercise();
+    }
+
+    /// Remember (per user) which piece is open, so a relaunch reopens it.
+    fn persist_active_piece(&mut self, slug: Option<&str>) {
+        let now = self.now_ms();
+        if let Some(db) = &mut self.db {
+            db.set_setting(Self::ACTIVE_PIECE_SETTING, slug.unwrap_or(""), now);
+        }
+    }
+
+    /// Reopen the piece this user was working on. Bundled slugs only —
+    /// imported pieces aren't persisted (their MusicXML lives outside the
+    /// app). Returns false when there is nothing to restore.
+    pub(crate) fn restore_active_piece(&mut self) -> bool {
+        let Some(slug) = self.db.as_ref().and_then(|db| db.setting(Self::ACTIVE_PIECE_SETTING))
+        else {
+            return false;
+        };
+        if slug.is_empty() {
+            return false;
+        }
+        let Some(piece) = crate::score::RepertoireLibrary::bundled()
+            .into_iter()
+            .find(|piece| piece.slug == slug)
+        else {
+            return false;
+        };
+        self.start_piece(piece);
+        true
     }
 
     pub fn piece_stats(&self, slug: &str) -> Option<(i64, f64)> {
@@ -103,7 +138,9 @@ impl SessionEngine {
             self.session_id = Some(db.create_session(now, self.backend.display_name()));
         }
         self.refresh_skill();
-        self.next_exercise();
+        if !self.restore_active_piece() {
+            self.next_exercise();
+        }
     }
 
     pub fn add_user(&mut self, name: &str) {
@@ -305,6 +342,7 @@ impl SessionEngine {
             return;
         }
         self.is_playing_back = true;
+        self.playback_started_at = (self.clock)();
         self.playback_generation += 1;
         let generation = self.playback_generation;
         let duration = MidiFileEncoder::duration(&exercise, bpm);

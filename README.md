@@ -1,5 +1,9 @@
 # keyinsight-rust
 
+[![KeyInSight — try it in the browser](hero_readme.jpg)](https://larsbrubaker.github.io/keyinsight-rust/)
+
+**[▶ Try it live in your browser](https://larsbrubaker.github.io/keyinsight-rust/)** — the full trainer as WASM on GitHub Pages, with piano audio.
+
 A cross-platform port of [KeyInSight](https://github.com/kevinepope/KeyInSight)
 — a piano sight-reading trainer that builds the *see-note → press-key* reflex
 the way touch-typing trainers work: adaptive generated exercises, tight
@@ -22,9 +26,12 @@ and tempo modes, the skill model with unlocks, drills, free play, the
 bundled 18-piece repertoire, per-user profiles, and computer-keyboard
 input (A S D F G H J K = C4–C5, W E T Y U = sharps, Z/X octave).
 
-Still to come (Phase 2): native MIDI (midir) and audio out (cpal), Web
-MIDI / WebAudio in the browser, the mic backend, the calibration sheet,
-and engraving refinements.
+Phase 2 so far: real audio out on both platforms (metronome clicks +
+Hear It playing an OxiSynth-rendered CC0 piano soundfont through cpal /
+WebAudio), the calibration sheet, player dialogs, multi-system line
+breaking for long pieces, and the Swift app's visual layout. Still to
+come: native MIDI (midir), Web MIDI, the mic backend, and engraving
+refinements.
 
 ## Layout
 
