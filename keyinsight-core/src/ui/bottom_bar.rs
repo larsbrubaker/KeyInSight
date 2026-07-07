@@ -19,12 +19,21 @@ use crate::ui::DynamicLabel;
 
 type Engine = Rc<RefCell<SessionEngine>>;
 
+/// Bar height (the Swift bar's padding + control height).
+pub const BAR_HEIGHT: f64 = 44.0;
+
 pub fn build_bottom_bar(
     engine: &Engine,
     font: &Arc<Font>,
     cells: &SidePanelCells,
 ) -> Box<dyn Widget> {
-    let mut row = FlexRow::new().with_gap(10.0).with_padding(10.0);
+    let mut row = FlexRow::new()
+        .with_gap(10.0)
+        .with_padding(10.0)
+        // Fixed bar height: without the cap a container child of a
+        // FlexColumn expands to the full available height.
+        .with_min_size(agg_gui::geometry::Size::new(0.0, BAR_HEIGHT))
+        .with_max_size(agg_gui::geometry::Size::new(f64::INFINITY, BAR_HEIGHT));
 
     // Player readout + switch (cycles through profiles) + add.
     {

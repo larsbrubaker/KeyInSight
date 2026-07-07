@@ -24,12 +24,21 @@ pub struct SidePanelCells {
     pub show_progress: Rc<Cell<bool>>,
 }
 
+/// The Swift `.frame(width: 300)`.
+pub const PANEL_WIDTH: f64 = 300.0;
+
 pub fn build_side_panel(
     engine: &Engine,
     font: &Arc<Font>,
     cells: &SidePanelCells,
 ) -> Box<dyn Widget> {
-    let mut column = FlexColumn::new().with_gap(8.0).with_padding(14.0);
+    let mut column = FlexColumn::new()
+        .with_gap(8.0)
+        .with_padding(14.0)
+        // Fixed panel width: without the cap a container child of a
+        // FlexRow expands to the full available width.
+        .with_min_size(agg_gui::geometry::Size::new(PANEL_WIDTH, 0.0))
+        .with_max_size(agg_gui::geometry::Size::new(PANEL_WIDTH, f64::INFINITY));
 
     column = column
         .add(Box::new(header_label(engine, font)))
