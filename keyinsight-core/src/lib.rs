@@ -15,6 +15,7 @@
 //! is a status screen that proves the native + WASM pipelines end to end.
 
 pub mod core;
+pub mod engine;
 pub mod score;
 
 use std::sync::Arc;
