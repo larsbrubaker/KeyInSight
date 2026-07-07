@@ -16,7 +16,9 @@
 
 pub mod core;
 pub mod engine;
+pub mod persistence;
 pub mod score;
+pub mod skill;
 
 use std::sync::Arc;
 
