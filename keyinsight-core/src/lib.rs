@@ -60,7 +60,7 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(font: Arc<Font>, _platform: P
         ))
         .add(Box::new(
             Label::new(
-                &format!("port version {PORT_VERSION}"),
+                format!("port version {PORT_VERSION}"),
                 Arc::clone(&font),
             )
             .with_font_size(13.0),
