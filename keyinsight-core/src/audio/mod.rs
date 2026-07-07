@@ -9,11 +9,13 @@
 #[cfg(test)]
 mod tests;
 
+pub mod goertzel;
 mod metronome;
 mod midi_file_encoder;
 pub mod synth;
 mod yin;
 
+pub use goertzel::{goertzel_power, midi_frequency, GoertzelDetector};
 pub use metronome::Metronome;
 pub use midi_file_encoder::MidiFileEncoder;
 pub use synth::{click_samples, parse_smf, render_smf, Clip, SmfNote};

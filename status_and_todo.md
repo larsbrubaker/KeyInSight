@@ -101,8 +101,17 @@ substitutions, architecture, build/deploy). verovio-rust has its own
    `keyinsight-wasm/src/audio.rs`; MIDI permission requests belong in the
    shim/`main.ts`, never visible UI). Note: the SF2 is embedded, putting
    the wasm at ~18 MB — consider lazy-fetching it if load time matters.
-4. **Mic backend**: platform mic capture → `YinPitchDetector` + `NoteGate`
-   (both ported and tested) → `NoteEvent`s; level meter UI.
+4. ~~**Mic backend**~~ — done (2026-07-07), Goertzel-bank design (not
+   YIN): `audio/goertzel.rs` evaluates each candidate note's harmonics
+   with spectral contrast against off-frequency probes (noise-robust,
+   chord-capable), `input/mic.rs` turns detections into NoteEvents
+   (unexplained attacks surface as low-confidence "heard something"),
+   capture via cpal (`keyinsight-native`) and getUserMedia
+   (`keyinsight-wasm/src/mic.rs`). Level meter is live.
+   `keyinsight-native --mic-smoke` plays a C-major chord through the
+   speakers and detects all three notes on the default mic (verified).
+   YIN + NoteGate remain ported/tested if monophonic free-play pitch
+   tracking ever wants them.
 5. ~~**CalibrationSheet**~~ — done (2026-07-07): `ui/sheets/calibration.rs`,
    tap-along flow with warm-ups, median input-latency compensation,
    piano keys pass through the modal (`ModalSheet::with_key_passthrough`).

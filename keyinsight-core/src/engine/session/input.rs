@@ -10,6 +10,30 @@ use crate::notation::NoteState;
 use crate::score::Staff;
 
 impl SessionEngine {
+    /// Drive the microphone backend (called from `tick`): drain captured
+    /// audio, detect the exercise's candidate notes, and surface the
+    /// input level for the side panel meter.
+    pub(crate) fn process_mic_input(&mut self) {
+        // Candidates: the notes worth listening for right now. Free play
+        // has no expectations, so listen across the whole keyboard.
+        let candidates: Vec<u8> = if self.is_free_play {
+            (21..=108).collect()
+        } else {
+            self.current_expected_midis.iter().copied().collect()
+        };
+        let now = (self.clock)();
+        let Some(mic) = self
+            .backend
+            .as_any_mut()
+            .and_then(|any| any.downcast_mut::<crate::input::MicBackend>())
+        else {
+            return;
+        };
+        mic.process(now, &candidates);
+        let level = mic.level();
+        *self.mic_level.borrow_mut() = level;
+    }
+
     pub fn handle(&mut self, event: NoteEvent) {
         if let Some(calibration_tap) = &self.calibration_tap {
             if event.kind == NoteEventKind::On {

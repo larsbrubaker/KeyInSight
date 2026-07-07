@@ -393,6 +393,7 @@ impl SessionEngine {
     /// Drive the engine: drain queued input events, run deferred actions,
     /// pump the metronome scheduler + sweep. Shells call this every frame.
     pub fn tick(&mut self) {
+        self.process_mic_input();
         // Input events.
         loop {
             let event = self.event_queue.borrow_mut().pop_front();

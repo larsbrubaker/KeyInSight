@@ -357,3 +357,70 @@ fn active_piece_survives_reload() {
     fresh.start();
     assert!(fresh.active_piece().is_none(), "training resumes after exit");
 }
+
+/// Fake platform mic: hands out queued sample chunks.
+struct FakeMic {
+    chunks: RefCell<std::collections::VecDeque<Vec<f32>>>,
+}
+impl crate::input::MicSource for FakeMic {
+    fn start(&self) -> bool {
+        true
+    }
+    fn stop(&self) {}
+    fn sample_rate(&self) -> f64 {
+        44_100.0
+    }
+    fn drain(&self, out: &mut Vec<f32>) {
+        if let Some(chunk) = self.chunks.borrow_mut().pop_front() {
+            out.extend_from_slice(&chunk);
+        }
+    }
+}
+
+/// The mic backend turns a played candidate into engine input: the
+/// expected note advances the exercise like any other backend's events.
+#[test]
+fn mic_backend_detects_the_expected_note() {
+    use crate::audio::goertzel::midi_frequency;
+    use crate::input::{MicBackend, MicSource};
+
+    // A steady piano-ish tone at the candidate pitch, chunked like a
+    // capture callback delivers it.
+    let f0 = midi_frequency(60);
+    let tone: Vec<f32> = (0..44_100)
+        .map(|i| {
+            let t = i as f64 / 44_100.0;
+            let mut v = 0.0;
+            for (mult, gain) in [(1.0, 1.0), (2.0, 0.45), (3.0, 0.22)] {
+                v += gain * (2.0 * std::f64::consts::PI * f0 * mult * t).sin();
+            }
+            (0.25 * v) as f32
+        })
+        .collect();
+    let chunks: std::collections::VecDeque<Vec<f32>> =
+        tone.chunks(2048).map(|c| c.to_vec()).collect();
+    let mic = Rc::new(FakeMic {
+        chunks: RefCell::new(chunks),
+    });
+
+    let mut backend = MicBackend::new(Rc::clone(&mic) as Rc<dyn MicSource>);
+    let events: Rc<RefCell<Vec<NoteEvent>>> = Rc::new(RefCell::new(Vec::new()));
+    let sink = Rc::clone(&events);
+    crate::core::InputBackend::set_on_event(
+        &mut backend,
+        Some(Box::new(move |event| sink.borrow_mut().push(event))),
+    );
+    crate::core::InputBackend::start(&mut backend);
+
+    for frame in 0..20 {
+        backend.process(frame as f64 * 0.02, &[60]);
+    }
+    assert!(backend.level() > 0.05, "meter shows input");
+    let events = events.borrow();
+    assert!(
+        events
+            .iter()
+            .any(|e| e.kind == NoteEventKind::On && e.midi == 60 && e.confidence >= 1.0),
+        "C4 note-on emitted: {events:?}"
+    );
+}

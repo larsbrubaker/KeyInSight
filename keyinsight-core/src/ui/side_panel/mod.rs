@@ -351,7 +351,7 @@ fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelCells) -> Fl
     let mut column = FlexColumn::new().with_gap(8.0);
 
     // Input source picker (segmented row, equal widths).
-    let mut input_row = FlexRow::new().with_gap(2.0);
+    let mut input_row = FlexRow::new().with_gap(6.0);
     for source in [
         InputSource::Midi,
         InputSource::Keyboard,
@@ -395,7 +395,7 @@ fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelCells) -> Fl
 
     // Pacing picker; disabled unless the source has exact timing and the
     // content is monophonic (the Swift `.disabled(...)`).
-    let mut pacing_row = FlexRow::new().with_gap(2.0);
+    let mut pacing_row = FlexRow::new().with_gap(6.0);
     for mode in [PacingMode::SelfPaced, PacingMode::Tempo] {
         let active = Rc::clone(engine);
         let click = Rc::clone(engine);

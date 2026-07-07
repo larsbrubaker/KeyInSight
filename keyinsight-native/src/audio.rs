@@ -188,3 +188,118 @@ impl AudioOut for CpalAudioOut {
         mixer.sounds.retain(|sound| !sound.is_clip);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Microphone capture (mic input backend)
+// ---------------------------------------------------------------------------
+
+/// Desktop [`keyinsight_core::input::MicSource`] over a cpal input
+/// stream: the capture callback pushes mono samples into a bounded ring;
+/// the mic backend drains it once per engine tick.
+pub struct CpalMicSource {
+    state: std::cell::RefCell<Option<MicStream>>,
+}
+
+struct MicStream {
+    // Held for its Drop; the callback owns capture.
+    _stream: cpal::Stream,
+    ring: Arc<Mutex<std::collections::VecDeque<f32>>>,
+    sample_rate: f64,
+}
+
+/// Cap the buffer at ~2 s so a stalled UI can't grow it unbounded.
+const MIC_RING_CAP: usize = 96_000;
+
+impl CpalMicSource {
+    pub fn new() -> Self {
+        Self {
+            state: std::cell::RefCell::new(None),
+        }
+    }
+
+    fn open() -> Result<MicStream, String> {
+        let host = cpal::default_host();
+        let device = host
+            .default_input_device()
+            .ok_or("no default input device")?;
+        let config = device
+            .default_input_config()
+            .map_err(|err| err.to_string())?;
+        let sample_rate = config.sample_rate().0 as f64;
+        let channels = config.channels() as usize;
+        let ring: Arc<Mutex<std::collections::VecDeque<f32>>> =
+            Arc::new(Mutex::new(std::collections::VecDeque::new()));
+
+        let sink = Arc::clone(&ring);
+        let stream = match config.sample_format() {
+            cpal::SampleFormat::F32 => device.build_input_stream(
+                &config.into(),
+                move |data: &[f32], _: &_| push_mono(&sink, data, channels),
+                |err| eprintln!("KeyInSight: mic stream error ({err})"),
+                None,
+            ),
+            other => return Err(format!("unsupported mic sample format {other:?}")),
+        }
+        .map_err(|err| err.to_string())?;
+        stream.play().map_err(|err| err.to_string())?;
+        Ok(MicStream {
+            _stream: stream,
+            ring,
+            sample_rate,
+        })
+    }
+}
+
+/// Downmix interleaved frames to mono and append, dropping the oldest
+/// past the cap.
+fn push_mono(
+    ring: &Arc<Mutex<std::collections::VecDeque<f32>>>,
+    data: &[f32],
+    channels: usize,
+) {
+    let mut ring = ring.lock().expect("mic ring lock");
+    for frame in data.chunks(channels.max(1)) {
+        let mono = frame.iter().sum::<f32>() / frame.len() as f32;
+        ring.push_back(mono);
+    }
+    let excess = ring.len().saturating_sub(MIC_RING_CAP);
+    ring.drain(..excess);
+}
+
+impl keyinsight_core::input::MicSource for CpalMicSource {
+    fn start(&self) -> bool {
+        let mut state = self.state.borrow_mut();
+        if state.is_some() {
+            return true;
+        }
+        match Self::open() {
+            Ok(stream) => {
+                *state = Some(stream);
+                true
+            }
+            Err(err) => {
+                eprintln!("KeyInSight: microphone unavailable ({err}) — mic input disabled");
+                false
+            }
+        }
+    }
+
+    fn stop(&self) {
+        self.state.borrow_mut().take();
+    }
+
+    fn sample_rate(&self) -> f64 {
+        self.state
+            .borrow()
+            .as_ref()
+            .map(|s| s.sample_rate)
+            .unwrap_or(44_100.0)
+    }
+
+    fn drain(&self, out: &mut Vec<f32>) {
+        if let Some(stream) = self.state.borrow().as_ref() {
+            let mut ring = stream.ring.lock().expect("mic ring lock");
+            out.extend(ring.drain(..));
+        }
+    }
+}

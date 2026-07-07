@@ -71,6 +71,13 @@ impl KeyInSightPlatform for NativePlatform {
         Rc::new(audio::CpalAudioOut::new())
     }
 
+    /// Real microphone capture: the mic input source detects played
+    /// notes with the Goertzel bank. Opens the device lazily on first
+    /// use.
+    fn mic(&self) -> Option<Rc<dyn keyinsight_core::input::MicSource>> {
+        Some(Rc::new(audio::CpalMicSource::new()))
+    }
+
     fn supports_musicxml_import(&self) -> bool {
         true
     }
@@ -105,6 +112,12 @@ fn main() {
         audio_smoke();
         return;
     }
+    // Loopback diagnostic: play a chord through the speakers and detect
+    // it on the default microphone (`keyinsight-native --mic-smoke`).
+    if std::env::args().any(|arg| arg == "--mic-smoke") {
+        mic_smoke();
+        return;
+    }
 
     let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform);
 
@@ -117,6 +130,118 @@ fn main() {
         // Advance the engine every painted frame (input queue, deferred
         // actions, metronome sweep).
         move || handles.tick(),
+    );
+}
+
+fn mic_smoke() {
+    use keyinsight_core::audio::MidiFileEncoder;
+    use keyinsight_core::core::InputBackend;
+    use keyinsight_core::input::{MicBackend, MicSource};
+    use keyinsight_core::score::{Exercise, NoteDuration, ScoreNote};
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    /// Tee: copies drained samples so the smoke can report raw ratios.
+    struct TeeMic {
+        inner: audio::CpalMicSource,
+        window: RefCell<Vec<f32>>,
+    }
+    impl MicSource for TeeMic {
+        fn start(&self) -> bool {
+            self.inner.start()
+        }
+        fn stop(&self) {
+            self.inner.stop()
+        }
+        fn sample_rate(&self) -> f64 {
+            self.inner.sample_rate()
+        }
+        fn drain(&self, out: &mut Vec<f32>) {
+            let before = out.len();
+            self.inner.drain(out);
+            let mut window = self.window.borrow_mut();
+            window.extend_from_slice(&out[before..]);
+            let excess = window.len().saturating_sub(4096);
+            window.drain(..excess);
+        }
+    }
+
+    let mic: Rc<TeeMic> = Rc::new(TeeMic {
+        inner: audio::CpalMicSource::new(),
+        window: RefCell::new(Vec::new()),
+    });
+    let mut backend = MicBackend::new(Rc::clone(&mic) as Rc<dyn MicSource>);
+    let detected: Rc<RefCell<Vec<u8>>> = Rc::new(RefCell::new(Vec::new()));
+    let sink = Rc::clone(&detected);
+    backend.set_on_event(Some(Box::new(move |event| {
+        if event.kind == keyinsight_core::core::NoteEventKind::On && event.confidence >= 1.0 {
+            sink.borrow_mut().push(event.midi);
+        }
+    })));
+    backend.start();
+
+    // The capture device can take a second to deliver its first samples;
+    // don't start the chord until the mic is actually flowing.
+    let warmup = std::time::Instant::now();
+    let mut probe = Vec::new();
+    while probe.len() < 4096 && warmup.elapsed().as_secs_f64() < 5.0 {
+        mic.drain(&mut probe);
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    println!(
+        "mic-smoke: mic flowing after {:.2}s ({} samples)",
+        warmup.elapsed().as_secs_f64(),
+        probe.len()
+    );
+
+    let out = audio::CpalAudioOut::new();
+    // Three back-to-back chords keep fresh attacks coming.
+    let chord_notes = |_: ()| {
+        vec![
+            ScoreNote::note(60, NoteDuration::Whole),
+            ScoreNote::note(64, NoteDuration::Whole).with_chord(true),
+            ScoreNote::note(67, NoteDuration::Whole).with_chord(true),
+        ]
+    };
+    let mut notes = Vec::new();
+    for _ in 0..3 {
+        notes.extend(chord_notes(()));
+    }
+    let chord = Exercise::new(notes, 4);
+    let accepted = out.play_smf(&MidiFileEncoder::encode(&chord, 90.0, 0));
+    println!("mic-smoke: playing C-major chords (speakers on?) accepted = {accepted}");
+
+    let start = std::time::Instant::now();
+    let mut peak_level = 0.0f64;
+    let mut peak_ratio = [0.0f64; 3];
+    let mut sub_contrast = [f64::INFINITY; 3];
+    while start.elapsed().as_secs_f64() < 8.0 {
+        backend.process(keyinsight_core::host_now(), &[60, 64, 67]);
+        peak_level = peak_level.max(backend.level());
+        {
+            let window = mic.window.borrow();
+            if window.len() >= 4096 {
+                let rate = MicSource::sample_rate(&*mic);
+                for (i, midi) in [60u8, 64, 67].iter().enumerate() {
+                    peak_ratio[i] = peak_ratio[i].max(
+                        keyinsight_core::audio::goertzel::candidate_ratio(&window, rate, *midi),
+                    );
+                    sub_contrast[i] = sub_contrast[i].min(
+                        keyinsight_core::audio::goertzel::sub_octave_contrast(
+                            &window, rate, *midi,
+                        ),
+                    );
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_millis(15));
+    }
+    backend.stop();
+    let mut hits = detected.borrow().clone();
+    hits.sort_unstable();
+    hits.dedup();
+    println!(
+        "mic-smoke: detected {hits:?} (want [60, 64, 67]); peak mic level {peak_level:.4}; peak ratios C/E/G = {peak_ratio:.3?}; min sub-octave contrast = {sub_contrast:.2?}"
     );
 }
 

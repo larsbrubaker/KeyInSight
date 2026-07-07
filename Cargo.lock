@@ -1550,6 +1550,7 @@ dependencies = [
  "js-sys",
  "keyinsight-core",
  "wasm-bindgen",
+ "wasm-bindgen-futures",
  "web-sys",
 ]
 

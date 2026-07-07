@@ -11,6 +11,7 @@
 #![cfg(target_arch = "wasm32")]
 
 mod audio;
+mod mic;
 
 use std::rc::Rc;
 
@@ -55,6 +56,11 @@ impl KeyInSightPlatform for WasmPlatform {
     /// fallback when the browser refuses a context).
     fn audio(&self) -> Rc<dyn AudioOut> {
         Rc::new(audio::WebAudioOut::new())
+    }
+
+    /// getUserMedia microphone capture for the mic input source.
+    fn mic(&self) -> Option<Rc<dyn keyinsight_core::input::MicSource>> {
+        Some(Rc::new(mic::WebMicSource::new()))
     }
 }
 

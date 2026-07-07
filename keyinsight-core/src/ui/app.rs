@@ -16,7 +16,8 @@ use agg_gui::widgets::{Conditional, Container, FlexColumn, FlexRow, Padding, Sep
 use agg_gui::App;
 
 use crate::audio::{AudioOut, NullAudioOut};
-use crate::engine::{default_backend_factory, SessionEngine};
+use crate::engine::SessionEngine;
+use crate::input::{MicBackend, SimulatedKeyboardBackend, UnpluggedBackend};
 use crate::notation::NotationWidget;
 use crate::persistence::{AppDatabase, Storage};
 use crate::ui::fonts::{size, UiFonts};
@@ -39,6 +40,12 @@ pub trait KeyInSightPlatform: 'static {
     /// silent.
     fn audio(&self) -> Rc<dyn AudioOut> {
         Rc::new(NullAudioOut)
+    }
+
+    /// Microphone capture for the mic input source. `None` keeps the
+    /// simulated-keyboard substitution (mic input then behaves like Keys).
+    fn mic(&self) -> Option<Rc<dyn crate::input::MicSource>> {
+        None
     }
 
     /// Whether this platform can present a MusicXML file picker; the
@@ -194,11 +201,23 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
     let db = platform.storage().map(|storage| AppDatabase::open(storage, now_ms));
     let audio = platform.audio();
 
+    // Backend factory: the platform's real microphone when it has one;
+    // the simulated keyboard substitutes for MIDI (and mic, headless).
+    let mic = platform.mic();
+    let factory: crate::engine::BackendFactory = Box::new(move |source| match source {
+        crate::engine::InputSource::SelfVerify => Box::new(UnpluggedBackend::new()),
+        crate::engine::InputSource::Microphone => match &mic {
+            Some(mic) => Box::new(MicBackend::new(Rc::clone(mic))),
+            None => Box::new(SimulatedKeyboardBackend::new()),
+        },
+        _ => Box::new(SimulatedKeyboardBackend::new()),
+    });
+
     let engine = Rc::new(RefCell::new(SessionEngine::new(
         db,
         audio,
         Rc::clone(&clock),
-        default_backend_factory(),
+        factory,
         // Session seed: wall-clock-derived so exercises vary run to run,
         // while any single run stays reproducible from its log.
         now_ms as u64,

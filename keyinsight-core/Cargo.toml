@@ -19,3 +19,7 @@ oxisynth = "0.1"
 
 [lib]
 crate-type = ["rlib"]
+
+[features]
+# Verbose Goertzel detector tracing for the --mic-smoke diagnostic.
+detector-trace = []

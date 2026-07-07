@@ -11,7 +11,7 @@ source (see `docs/porting.md`).
 | Verovio SVG notation via WKWebView | [verovio-rust](https://github.com/larsbrubaker/verovio-rust) — our Rust port of Verovio engraving, rendering through `DrawCtx` with the Leipzig SMuFL font. It lives in its own repository because Verovio is LGPL-3.0 and this app is MIT; consume it only as the `verovio-rust` library dependency (sibling checkout, like agg-gui). Per-note ids, bounds lookup, color overrides, and the timemap replace Verovio's SVG-id APIs. The score always renders on a light page — music is always light. |
 | SwiftMIDI / CoreMIDI | `midir` on native; Web MIDI API via `wasm-bindgen` on WASM — both behind the core's `MidiPort` trait |
 | AVAudioEngine sampler + metronome | `cpal` output on native; WebAudio on WASM — behind the core's `AudioOut` trait. SMF playback renders through OxiSynth + the bundled CC0 Upright Piano KW SF2 (`audio::synth`); a synthesized piano voice is the no-soundfont fallback. |
-| SoundpipeAudioKit PitchTap | Port the Swift `YinPitchDetector` (pure DSP, ports directly); mic capture behind the platform trait |
+| SoundpipeAudioKit PitchTap | Goertzel bank over the exercise's candidate notes (`audio::goertzel`, chord-capable, noise-robust); mic capture behind `KeyInSightPlatform::mic` (cpal / getUserMedia). The ported `YinPitchDetector` remains for monophonic pitch tracking. |
 | GRDB / SQLite | Storage trait in core (load/save serialized state); native = file-backed, WASM = localStorage/IndexedDB. Port the `AppDatabase` schema semantics (skill stats, session history, settings, library) even though the storage engine differs. |
 | MusicXML via Verovio | Port `MusicXMLImporter`/`MusicXMLEncoder` directly (plain XML processing); use `quick-xml` |
 

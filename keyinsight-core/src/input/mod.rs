@@ -6,8 +6,10 @@
 //!
 //! Ports `Sources/KeyInSight/Input/`.
 
+mod mic;
 mod simulated;
 mod unplugged;
 
+pub use mic::{MicBackend, MicSource};
 pub use simulated::SimulatedKeyboardBackend;
 pub use unplugged::UnpluggedBackend;

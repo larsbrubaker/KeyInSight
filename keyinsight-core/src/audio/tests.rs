@@ -331,3 +331,113 @@ fn smf_parse_keeps_chords_simultaneous() {
     assert_eq!(notes.len(), 2);
     assert!((notes[0].start_seconds - notes[1].start_seconds).abs() < 1e-9);
 }
+
+// --- Goertzel note detection (mic input DSP) ---
+
+use crate::audio::goertzel::{Detected, GoertzelDetector, WINDOW_SAMPLES};
+use crate::audio::{goertzel_power, midi_frequency};
+
+const RATE: f64 = 44_100.0;
+
+/// A piano-ish tone: fundamental plus decaying harmonics.
+fn piano_tone(midis: &[u8], samples: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; samples];
+    for &midi in midis {
+        let f0 = midi_frequency(midi);
+        for (i, slot) in out.iter_mut().enumerate() {
+            let t = i as f64 / RATE;
+            let body = (-t * 1.5).exp();
+            let mut v = 0.0;
+            for (mult, gain) in [(1.0, 1.0), (2.0, 0.45), (3.0, 0.22)] {
+                v += gain * (2.0 * std::f64::consts::PI * f0 * mult * t).sin();
+            }
+            *slot += (0.25 * body * v) as f32;
+        }
+    }
+    out
+}
+
+fn detect(signal: &[f32], candidates: &[u8]) -> Vec<Detected> {
+    let mut detector = GoertzelDetector::new();
+    let mut events = Vec::new();
+    // Slide the window like the backend does (one hop per frame).
+    let hop = 2048;
+    let mut start = 0;
+    while start + WINDOW_SAMPLES <= signal.len() {
+        events.extend(detector.process(
+            &signal[start..start + WINDOW_SAMPLES],
+            RATE,
+            candidates,
+        ));
+        start += hop;
+    }
+    events
+}
+
+#[test]
+fn goertzel_power_peaks_at_the_target_frequency() {
+    let signal: Vec<f32> = (0..4096)
+        .map(|i| (2.0 * std::f64::consts::PI * 440.0 * i as f64 / RATE).sin() as f32)
+        .collect();
+    let at_target = goertzel_power(&signal, RATE, 440.0);
+    let off_target = goertzel_power(&signal, RATE, 415.3); // G#4
+    assert!(
+        at_target > off_target * 50.0,
+        "A4 bin {at_target} must dominate G#4 bin {off_target}"
+    );
+}
+
+#[test]
+fn detector_hears_the_played_candidate_only() {
+    let signal = piano_tone(&[60], WINDOW_SAMPLES * 4);
+    let events = detect(&signal, &[60, 64, 67]);
+    assert!(events.contains(&Detected::On(60)), "C4 detected: {events:?}");
+    assert!(!events.contains(&Detected::On(64)), "E4 silent: {events:?}");
+    assert!(!events.contains(&Detected::On(67)), "G4 silent: {events:?}");
+}
+
+#[test]
+fn detector_hears_every_note_of_a_chord() {
+    let signal = piano_tone(&[60, 64, 67], WINDOW_SAMPLES * 4);
+    let events = detect(&signal, &[60, 64, 67]);
+    for midi in [60u8, 64, 67] {
+        assert!(
+            events.contains(&Detected::On(midi)),
+            "chord tone {midi} detected: {events:?}"
+        );
+    }
+}
+
+#[test]
+fn detector_rejects_the_octave_above() {
+    // Playing C4: its 2nd harmonic sits exactly on C5 — the C5 candidate
+    // must not fire.
+    let signal = piano_tone(&[60], WINDOW_SAMPLES * 4);
+    let events = detect(&signal, &[72]);
+    assert!(
+        !events.contains(&Detected::On(72)),
+        "C5 candidate stays silent for a played C4: {events:?}"
+    );
+}
+
+#[test]
+fn detector_stays_silent_on_silence() {
+    let signal = vec![0.0f32; WINDOW_SAMPLES * 4];
+    assert!(detect(&signal, &[60, 64]).is_empty());
+}
+
+#[test]
+fn unexplained_attack_reports_uncertain_not_wrong() {
+    // Silence, then an F4 attack while listening for C4 only.
+    let mut signal = vec![0.0f32; WINDOW_SAMPLES * 2];
+    signal.extend(piano_tone(&[65], WINDOW_SAMPLES * 3));
+    let events = detect(&signal, &[60]);
+    assert!(
+        events.contains(&Detected::Uncertain),
+        "unexplained attack heard: {events:?}"
+    );
+    assert!(
+        !events.contains(&Detected::On(60)),
+        "C4 must not fire for a played F4: {events:?}"
+    );
+}
