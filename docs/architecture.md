@@ -43,11 +43,11 @@ The workspace `Cargo.toml` redirects `agg-gui` to `../agg-gui/agg-gui` via
 `[patch.crates-io]`. This is the default state — every commit assumes
 contributors run with the path override active.
 
-When keyinsight-rust needs an agg-gui feature that doesn't exist yet, **add
+When KeyInSight needs an agg-gui feature that doesn't exist yet, **add
 it to agg-gui** (not a one-off here). Workflow:
 
 1. Make the change in `../agg-gui/agg-gui/src/…`.
-2. Run keyinsight-rust against the patched local crate
+2. Run KeyInSight against the patched local crate
   (`cargo check --workspace`).
 3. When stable, publish a new agg-gui version (Lars handles this).
 4. CI builds against the published crates.io version. CI clones

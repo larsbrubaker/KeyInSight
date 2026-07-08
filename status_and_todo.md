@@ -11,7 +11,7 @@ training loop and shipped.** Every module of the Swift reference
 its test suite: 168 tests green across the workspace, clippy clean
 (`-D warnings`), CI and GitHub Pages deploys passing.
 
-Live app: <https://larsbrubaker.github.io/keyinsight-rust/>
+Live app: <https://larsbrubaker.github.io/KeyInSight/>
 (training loop works in the browser: press A S D F G H J K = C4–C5,
 W E T Y U = sharps, Z/X octave shift; progress persists in localStorage).
 
@@ -22,7 +22,7 @@ Native app: `cargo run -p keyinsight-native` (persists to
 
 | Repo | License | Role |
 |---|---|---|
-| [keyinsight-rust](https://github.com/larsbrubaker/keyinsight-rust) | MIT | The app. Submodule of rust-apps. Contains `keyinsight-swift-reference/` (pinned Swift source). |
+| [KeyInSight](https://github.com/larsbrubaker/KeyInSight) | MIT | The app. Submodule of rust-apps. Contains `keyinsight-swift-reference/` (pinned Swift source). |
 | [verovio-rust](https://github.com/larsbrubaker/verovio-rust) | **LGPL-3.0** | Music engraving port (Verovio → Rust, renders via agg-gui). Separate repo purely for license isolation — never inline its code into the app. Contains `verovio-cpp-reference/` pinned at `8d42439` (6.2.1, same revision the Swift app pinned). Submodule of rust-apps. |
 | [agg-gui](https://github.com/larsbrubaker/agg-gui) | MIT | UI framework. Path-patched sibling (`[patch.crates-io]`). |
 
@@ -33,7 +33,7 @@ Local layout must be siblings (the rust-apps superproject provides this):
 
 ```powershell
 git clone --recurse-submodules https://github.com/larsbrubaker/rust-apps.git
-cd rust-apps/keyinsight-rust
+cd rust-apps/KeyInSight
 cargo test --workspace              # everything should be green
 cargo run -p keyinsight-native      # desktop app
 ```
@@ -137,14 +137,14 @@ substitutions, architecture, build/deploy). verovio-rust has its own
 
 ## Known rough edges
 
-- keyinsight CI builds against the pushed sibling agg-gui clone; local
-  work that adds agg-gui features must push agg-gui before keyinsight.
+- KeyInSight CI builds against the pushed sibling agg-gui clone; local
+  work that adds agg-gui features must push agg-gui before KeyInSight.
 - `Toolkit::layout()`/`render()` panic if called before `load_music_xml`
   (mirrors the C++ toolkit contract; the app never does).
 - The session RNG seeds from wall time at launch (Swift used
   `SystemRandomNumberGenerator`); pass a fixed seed to
   `SessionEngine::new` for reproducible runs.
-- rust-apps superproject: only the keyinsight-rust/verovio-rust pointers
+- rust-apps superproject: only the KeyInSight/verovio-rust pointers
   were committed by this work; other submodules have unrelated local
   changes from earlier sessions.
 

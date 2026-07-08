@@ -18,10 +18,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout keyinsight-rust
+      - name: Checkout KeyInSight
         uses: actions/checkout@v4
         with:
-          path: keyinsight-rust
+          path: KeyInSight
 
       # The workspace Cargo.toml patches agg-gui to ../agg-gui/agg-gui (see
       # docs/architecture.md), so CI needs the sibling layout to resolve
@@ -49,8 +49,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            keyinsight-rust/target
-          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('keyinsight-rust/Cargo.lock') }}
+            KeyInSight/target
+          key: ${{ runner.os }}-cargo-wasm-${{ hashFiles('KeyInSight/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-wasm-
 
@@ -61,11 +61,11 @@ jobs:
         uses: oven-sh/setup-bun@v2
 
       - name: Install demo dependencies
-        working-directory: keyinsight-rust/demo
+        working-directory: KeyInSight/demo
         run: bun install
 
       - name: Build WASM
-        working-directory: keyinsight-rust
+        working-directory: KeyInSight
         run: |
           wasm-pack build keyinsight-wasm \
             --target web \
@@ -73,13 +73,13 @@ jobs:
             --no-typescript
 
       - name: Bundle TypeScript
-        working-directory: keyinsight-rust/demo
+        working-directory: KeyInSight/demo
         run: bun run build
 
       - name: Upload pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: keyinsight-rust/demo/dist
+          path: KeyInSight/demo/dist
 
   deploy:
     needs: build

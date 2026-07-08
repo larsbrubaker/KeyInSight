@@ -1,8 +1,8 @@
-# keyinsight-rust
+# KeyInSight
 
-[![KeyInSight — try it in the browser](hero_readme.jpg)](https://larsbrubaker.github.io/keyinsight-rust/)
+[![KeyInSight — try it in the browser](hero_readme.jpg)](https://larsbrubaker.github.io/KeyInSight/)
 
-**[▶ Try it live in your browser](https://larsbrubaker.github.io/keyinsight-rust/)** — the full trainer as WASM on GitHub Pages, with piano audio.
+**[▶ Try it live in your browser](https://larsbrubaker.github.io/KeyInSight/)** — the full trainer as WASM on GitHub Pages, with piano audio.
 
 A cross-platform port of [KeyInSight](https://github.com/kevinepope/KeyInSight)
 — a piano sight-reading trainer that builds the *see-note → press-key* reflex
@@ -48,7 +48,7 @@ refinements.
 
 ```powershell
 # Clone with the Swift reference submodule
-git clone --recurse-submodules https://github.com/larsbrubaker/keyinsight-rust.git
+git clone --recurse-submodules https://github.com/larsbrubaker/KeyInSight.git
 
 # agg-gui is path-patched to a sibling checkout
 git clone https://github.com/larsbrubaker/agg-gui.git ../agg-gui

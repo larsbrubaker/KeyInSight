@@ -9,10 +9,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout keyinsight-rust
+      - name: Checkout KeyInSight
         uses: actions/checkout@v4
         with:
-          path: keyinsight-rust
+          path: KeyInSight
 
       # The workspace Cargo.toml patches agg-gui to ../agg-gui/agg-gui (see
       # docs/architecture.md), so CI needs the sibling layout.
@@ -41,24 +41,24 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            keyinsight-rust/target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('keyinsight-rust/Cargo.lock') }}
+            KeyInSight/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('KeyInSight/Cargo.lock') }}
 
       - name: Build native
-        working-directory: keyinsight-rust
+        working-directory: KeyInSight
         run: cargo build --workspace
 
       - name: Run tests
-        working-directory: keyinsight-rust
+        working-directory: KeyInSight
         run: cargo test --workspace
 
   build-wasm:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout keyinsight-rust
+      - name: Checkout KeyInSight
         uses: actions/checkout@v4
         with:
-          path: keyinsight-rust
+          path: KeyInSight
 
       - name: Checkout sibling agg-gui
         uses: actions/checkout@v4
@@ -81,7 +81,7 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM
-        working-directory: keyinsight-rust
+        working-directory: KeyInSight
         run: |
           wasm-pack build keyinsight-wasm \
             --target web \

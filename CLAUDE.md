@@ -1,4 +1,4 @@
-# Claude Code Guidelines — keyinsight-rust
+# Claude Code Guidelines — KeyInSight
 
 Port of **KeyInSight** (macOS Swift/SwiftUI piano sight-reading trainer) to
 **Rust + agg-gui**: one core crate, native desktop + WASM/GitHub Pages.

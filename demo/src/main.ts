@@ -41,7 +41,7 @@ function showBootError(err: unknown): void {
 
 async function boot(): Promise<void> {
   // Resolve against `document.baseURI` so the URL is correct both locally
-  // and on GitHub Pages under the /keyinsight-rust/ sub-path.
+  // and on GitHub Pages under the /KeyInSight/ sub-path.
   const v = `?v=${__BUILD_ID__}`;
   const url = new URL(`pkg/keyinsight_wasm.js${v}`, document.baseURI).href;
   const mod = (await import(/* @vite-ignore */ url)) as WasmModule;

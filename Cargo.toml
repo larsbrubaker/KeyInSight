@@ -9,7 +9,7 @@ edition = "2021"
 rust-version = "1.78"
 authors = ["Lars Brubaker <larsbrubaker@matterhackers.com>"]
 license = "MIT"
-repository = "https://github.com/larsbrubaker/keyinsight-rust"
+repository = "https://github.com/larsbrubaker/KeyInSight"
 
 [workspace.dependencies]
 agg-gui = "0.2"
