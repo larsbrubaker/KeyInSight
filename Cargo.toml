@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["keyinsight-core", "keyinsight-native", "keyinsight-wasm"]
+# verovio-rust is a submodule with its own workspace, consumed as a path dep.
+exclude = ["verovio-rust"]
 default-members = ["keyinsight-core", "keyinsight-native"]
 
 [workspace.package]
@@ -15,8 +17,8 @@ repository = "https://github.com/larsbrubaker/KeyInSight"
 agg-gui = "0.4"
 demo-wgpu = { path = "../agg-gui/demo-wgpu", default-features = false }
 # Music engraving (LGPL-3.0, its own repo — see docs/platform-substitutions.md).
-# rust-apps lays it out as a sibling; CI clones it the same way.
-verovio-rust = { path = "../verovio-rust" }
+# Pinned git submodule at ./verovio-rust (its own repo for license separation).
+verovio-rust = { path = "verovio-rust" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 web-time = "1"

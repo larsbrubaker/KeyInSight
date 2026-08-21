@@ -31,7 +31,7 @@ sibling modules — never by compressing code or bumping the limit.
   Missing primitives get added to `../agg-gui` first.
 - **Light theme.** The app runs agg-gui's light visuals, and notation always
   renders as black ink on a light page (music is always light).
-- **Notation goes through `verovio-rust`** (sibling repo, LGPL) — never
+- **Notation goes through `verovio-rust`** (git submodule at `verovio-rust/`, its own LGPL repo) — never
   inline engraving code here (license separation).
 - One green module per commit: `cargo build` clean, all tests pass.
 

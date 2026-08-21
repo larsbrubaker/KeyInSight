@@ -19,6 +19,9 @@ const EXCLUDED_DIRS: &[&str] = &[
     // ours to police (SessionEngine.swift alone is ~1400 lines; its Rust
     // port must be split into modules).
     "keyinsight-swift-reference",
+    // verovio-rust is its own repo (LGPL) pinned as a submodule; its
+    // file sizes are policed there.
+    "verovio-rust",
     "keyinsight-wasm/pkg",
     "demo/node_modules",
     "demo/dist",

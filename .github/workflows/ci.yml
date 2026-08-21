@@ -9,10 +9,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout KeyInSight
+      - name: Checkout KeyInSight (+ verovio-rust submodule, a path dep)
         uses: actions/checkout@v4
         with:
           path: KeyInSight
+          submodules: true
 
       # The workspace Cargo.toml patches agg-gui to ../agg-gui/agg-gui (see
       # docs/architecture.md), so CI needs the sibling layout.
@@ -22,11 +23,6 @@ jobs:
           repository: larsbrubaker/agg-gui
           path: agg-gui
 
-      - name: Checkout sibling verovio-rust (path dep in Cargo.toml)
-        uses: actions/checkout@v4
-        with:
-          repository: larsbrubaker/verovio-rust
-          path: verovio-rust
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -55,10 +51,11 @@ jobs:
   build-wasm:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout KeyInSight
+      - name: Checkout KeyInSight (+ verovio-rust submodule, a path dep)
         uses: actions/checkout@v4
         with:
           path: KeyInSight
+          submodules: true
 
       - name: Checkout sibling agg-gui
         uses: actions/checkout@v4
@@ -66,11 +63,6 @@ jobs:
           repository: larsbrubaker/agg-gui
           path: agg-gui
 
-      - name: Checkout sibling verovio-rust
-        uses: actions/checkout@v4
-        with:
-          repository: larsbrubaker/verovio-rust
-          path: verovio-rust
 
       - name: Install Rust + wasm32 target
         uses: dtolnay/rust-toolchain@stable

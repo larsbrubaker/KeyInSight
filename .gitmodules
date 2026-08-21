@@ -1,3 +1,6 @@
 [submodule "keyinsight-swift-reference"]
 	path = keyinsight-swift-reference
 	url = https://github.com/kevinepope/KeyInSight.git
+[submodule "verovio-rust"]
+	path = verovio-rust
+	url = https://github.com/larsbrubaker/verovio-rust.git
