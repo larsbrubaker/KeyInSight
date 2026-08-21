@@ -17,10 +17,10 @@ impl SessionEngine {
 
     // --- Exercise history / diversion ---
 
-    /// True when off the adaptive-training path (repertoire, free play, or
-    /// a drill) — the bottom bar offers Resume Training.
+    /// True when off the adaptive-training path (repertoire, free play, a
+    /// drill, or a survival run) — the bottom bar offers Resume Training.
     pub fn is_diverted(&self) -> bool {
-        self.active_piece.is_some() || self.is_free_play || self.drill_active
+        self.active_piece.is_some() || self.is_free_play || self.drill_active || self.is_survival
     }
 
     /// Back to normal adaptive exercises from any mode.
@@ -28,6 +28,7 @@ impl SessionEngine {
         self.is_free_play = false;
         self.active_piece = None;
         self.drill_active = false;
+        self.is_survival = false;
         self.pending_replay = None;
         self.replay_start_event = 0;
         self.persist_active_piece(None);
@@ -50,6 +51,7 @@ impl SessionEngine {
         self.is_free_play = false;
         self.active_piece = None;
         self.drill_active = false;
+        self.is_survival = false;
         self.replay_start_event = 0;
         self.pending_replay = Some(exercise);
         self.next_exercise();
@@ -61,6 +63,7 @@ impl SessionEngine {
         self.active_piece = Some(piece);
         self.is_free_play = false;
         self.drill_active = false;
+        self.is_survival = false;
         self.replay_start_event = 0;
         self.next_exercise();
     }
@@ -165,6 +168,7 @@ impl SessionEngine {
         self.is_free_play = false;
         self.active_piece = None;
         self.drill_active = false;
+        self.is_survival = false;
         self.pending_replay = None;
         self.replay_start_event = 0;
         // Restore this user's preferred input source.
@@ -257,8 +261,12 @@ impl SessionEngine {
         self.teardown_tempo_run();
         self.active_piece = None;
         self.drill_active = false;
+        self.is_survival = false;
         self.is_free_play = true;
         self.replay_start_event = 0;
+        // The mirror has no start spot: a playback restore must not gray
+        // out a prefix left over from a partial replay.
+        self.start_event_index = 0;
         self.current_expected_midis.clear();
         self.free_play_chords.clear();
         self.free_play_last_onset = 0.0;
@@ -392,6 +400,7 @@ impl SessionEngine {
         self.teardown_tempo_run();
         self.active_piece = None;
         self.is_free_play = false;
+        self.is_survival = false;
         self.drill_active = true;
         self.drill_cards_done = 0;
         self.last_drill_midi = None;
@@ -430,6 +439,7 @@ impl SessionEngine {
             worst_measure: None,
             drill: true,
             self_verified: self.input_source == InputSource::SelfVerify,
+            survival: None,
         }));
         self.schedule_auto_advance(unlocked);
         agg_gui::animation::request_draw();
@@ -438,9 +448,10 @@ impl SessionEngine {
     // --- Reference playback ("hear it") ---
 
     /// Playback is available whenever an exercise is on screen and the
-    /// metronome doesn't own the clock (i.e. not mid-tempo-run).
+    /// metronome doesn't own the clock (i.e. not mid-tempo-run). No Hear
+    /// It mid-run: survival is a reading test.
     pub fn can_playback(&self) -> bool {
-        if self.exercise.is_none() || self.is_free_play {
+        if self.exercise.is_none() || self.is_free_play || self.is_survival {
             return false;
         }
         !(self.phase == Phase::Playing && self.active_pacing == PacingMode::Tempo)

@@ -208,11 +208,30 @@ impl SessionEngine {
             let card = self.next_drill_card();
             self.last_drill_midi = card.all_sounded_notes().first().and_then(|n| n.midi);
             card
+        } else if self.is_survival {
+            // Survival window: three one-line chunks stitched — play the
+            // top line with two full lines of lookahead; crossing the seam
+            // slides the score up one line and the window advances
+            // invisibly (advance_survival_window). Neutral bias throughout:
+            // this is assessment, not drilling.
+            let head = self.generate_survival_chunk();
+            self.survival_upcoming =
+                vec![self.generate_survival_chunk(), self.generate_survival_chunk()];
+            self.survival_seam_events = head.match_events().len();
+            self.survival_window_gen += 1;
+            let mut parts = vec![head];
+            parts.extend(self.survival_upcoming.iter().cloned());
+            Exercise::stitched(&parts)
         } else {
             self.generate_training_exercise()
         };
-        let xml = MusicXmlEncoder::encode(&exercise);
-        let rendered = self.renderer.borrow_mut().render(&xml);
+        // Survival reads as a feed: two-bar lines, active line pinned to
+        // the top as the run scrolls.
+        let xml = MusicXmlEncoder::encode_with_breaks(
+            &exercise,
+            if self.is_survival { Some(2) } else { None },
+        );
+        let rendered = self.renderer.borrow_mut().render_with(&xml, self.is_survival);
         let Some(rendered) = rendered else {
             self.set_phase(Phase::Failed(
                 "Engraving failed for generated exercise.".to_string(),
@@ -225,6 +244,7 @@ impl SessionEngine {
             ));
             return;
         }
+        self.notation.borrow_mut().set_follow_top(self.is_survival);
 
         // Practice-from-here (repertoire): events before the chosen spot
         // are never expected — grayed out, excluded from counts and reports.
@@ -255,10 +275,11 @@ impl SessionEngine {
         // either staff tempo-scores fine.
         self.content_supports_tempo = self.events.iter().all(|e| e.pitches.len() == 1);
         // Drills run self-paced without overwriting the user's choice.
-        // (Survival joins this guard when it lands.)
+        // Survival is self-paced v1: reading rate IS the pace pressure.
         self.active_pacing = if self.mode == PacingMode::Tempo
             && self.content_supports_tempo
             && !self.drill_active
+            && !self.is_survival
         {
             PacingMode::Tempo
         } else {

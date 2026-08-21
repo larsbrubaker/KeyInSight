@@ -164,6 +164,10 @@ impl SessionEngine {
             });
         self.keys_user_default = db.setting("beginner_keys_default").as_deref() == Some("1");
         self.follow_octave = db.setting("follow_octave").as_deref() != Some("0");
+        self.survival_best = db
+            .setting("survival_best")
+            .and_then(|s| s.parse::<i64>().ok())
+            .unwrap_or(0);
         self.exercises_completed = db.lifetime_completed_exercise_count();
     }
 
@@ -336,6 +340,7 @@ impl SessionEngine {
                     self.finish_playback();
                 }
             }
+            Deferred::SurvivalWindowSwap { generation } => self.advance_survival_window(generation),
         }
     }
 }

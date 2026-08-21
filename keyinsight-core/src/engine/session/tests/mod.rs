@@ -4,13 +4,16 @@
 //! the simulated backend, see feedback + summary + persistence.
 //! `hands` covers hand modes / pacing / progress; `robustness` the mastery
 //! guards, chord windows, and rhythm advancement; `drill`, `free_play`,
-//! and `practice_from` the off-path modes.
+//! `practice_from`, and `survival` the off-path modes; `demo` the ported
+//! DemoDriver acts.
 
+mod demo;
 mod drill;
 mod free_play;
 mod hands;
 mod practice_from;
 mod robustness;
+mod survival;
 
 use std::cell::RefCell;
 use std::rc::Rc;

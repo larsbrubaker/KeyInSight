@@ -17,8 +17,8 @@ pub use matcher::{SelfPacedMatcher, SelfPacedOutcome};
 pub use octave_anchor::OctaveAnchor;
 pub use session::{
     default_backend_factory, BackendFactory, ChordEntry, ExerciseSummary, HandMode, InputSource,
-    IntervalEntry, PacingMode, Phase, ProgressEntry, SessionEngine, TransitionEntry,
-    DRILL_LENGTH, LATENCY_OUTLIER_MS,
+    IntervalEntry, PacingMode, Phase, ProgressEntry, SessionEngine, SurvivalReport,
+    TransitionEntry, DRILL_LENGTH, LATENCY_OUTLIER_MS,
 };
 pub use tempo_matcher::{
     RhythmPolicy, SurvivalPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy,

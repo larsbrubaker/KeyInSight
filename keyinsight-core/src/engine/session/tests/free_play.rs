@@ -126,3 +126,39 @@ fn free_play_playback_needs_a_take_and_stops_on_toggle() {
     assert!(!engine.is_playing_back());
     assert!(!engine.is_free_play());
 }
+
+/// Entering the mirror from a partial replay forgets the start spot: the
+/// playback restore must never gray out a "prefix" of the mirror.
+#[test]
+fn free_play_after_partial_replay_restores_without_locked_notes() {
+    use crate::notation::NoteState;
+    use crate::score::RepertoireLibrary;
+
+    let (mut engine, _audio, time) = recording_engine();
+    let piece = RepertoireLibrary::bundled()
+        .into_iter()
+        .find(|p| p.slug == "twinkle-twinkle")
+        .expect("bundled piece");
+    engine.start_piece(piece);
+    engine.practice_from(4);
+    assert_eq!(engine.start_event_index, 4);
+
+    engine.enter_free_play();
+    assert_eq!(engine.start_event_index, 0);
+    let at = *time.borrow();
+    engine.handle(note_on(60, at));
+    engine.handle(note_on(64, at + 0.5));
+    engine.handle(note_on(67, at + 1.0));
+    engine.toggle_free_play_playback();
+    assert!(engine.is_playing_back());
+    *time.borrow_mut() += 3.0;
+    engine.tick();
+    assert!(!engine.is_playing_back(), "playback completed");
+    let notation = engine.notation.borrow();
+    assert!(!engine.event_ids.is_empty());
+    for ids in &engine.event_ids {
+        for id in ids {
+            assert_ne!(notation.state_of(id), Some(NoteState::Locked));
+        }
+    }
+}

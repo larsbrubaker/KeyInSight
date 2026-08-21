@@ -30,6 +30,14 @@ impl SessionEngine {
             );
         }
 
+        // Survival: chunks chain seamlessly — no summary, no unlocks
+        // (assessment doesn't move the training difficulty); the run's
+        // summary arrives when the error budget dies.
+        if self.is_survival {
+            self.next_exercise();
+            return;
+        }
+
         // Micro-drill: accumulate and chain straight to the next card —
         // endless until End Drill.
         if self.drill_active {
@@ -181,6 +189,7 @@ impl SessionEngine {
             worst_measure,
             drill: false,
             self_verified: self.input_source == InputSource::SelfVerify,
+            survival: None,
         }));
         self.schedule_auto_advance(unlocked);
         agg_gui::animation::request_draw();

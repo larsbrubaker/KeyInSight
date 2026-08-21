@@ -4,7 +4,7 @@
 use crate::core::{NoteEvent, NoteEventKind, PitchSpelling};
 use crate::engine::session::{
     Deferred, InputSource, PacingMode, Phase, SessionEngine, CONFIDENCE_THRESHOLD,
-    LATENCY_OUTLIER_MS,
+    LATENCY_OUTLIER_MS, SURVIVAL_SWAP_DELAY,
 };
 use crate::engine::{SelfPacedOutcome, TempoOutcome, Timing};
 use crate::notation::NoteState;
@@ -136,12 +136,25 @@ impl SessionEngine {
                 }
                 self.record_chord_shape_attempt(index, was_error, clean_latency);
                 self.errors_on_current_note = 0;
+                if self.is_survival {
+                    self.survival_notes += 1;
+                }
                 if exercise_complete {
                     self.finish_exercise();
                 } else {
                     self.current_note_index = index + 1;
                     self.set_current(index + 1);
                     self.current_note_start = (self.clock)();
+                    // Crossing the survival seam: the next line is already
+                    // on screen and slides up normally; swap the window
+                    // once that slide settles.
+                    if self.is_survival && index + 1 == self.survival_seam_events {
+                        let generation = self.survival_window_gen;
+                        self.defer_action(
+                            SURVIVAL_SWAP_DELAY,
+                            Deferred::SurvivalWindowSwap { generation },
+                        );
+                    }
                 }
             }
             SelfPacedOutcome::Restarted { index, played } => {
@@ -156,7 +169,7 @@ impl SessionEngine {
                 let staff = self.staff_for(played, index);
                 self.record_attempt(played, staff, true, None);
                 self.reset_event_marks(index, played);
-                // Survival's life loss hooks in here once survival lands.
+                self.survival_life_lost();
             }
             SelfPacedOutcome::Wrong { index, played } => {
                 self.log(&event, "wrong", Some(index), None);
@@ -184,7 +197,7 @@ impl SessionEngine {
                         ));
                     }
                 }
-                // Survival's life loss hooks in here once survival lands.
+                self.survival_life_lost();
             }
             SelfPacedOutcome::Ignored => {
                 let index = self.matcher.as_ref().map(|m| m.index());
@@ -523,6 +536,10 @@ impl SessionEngine {
         }
         if nailed_it {
             {
+                // Deliberate deviation: Swift marks every notehead
+                // .correct here; the practice-from-here prefix stays
+                // Locked (it was never part of this pass) so the score
+                // keeps showing where the section started.
                 let mut notation = self.notation.borrow_mut();
                 for ids in self.event_ids.iter().skip(self.start_event_index) {
                     for id in ids {

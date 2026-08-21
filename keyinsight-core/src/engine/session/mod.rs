@@ -14,7 +14,9 @@
 //! - `completion.rs` — finish_exercise, unlocks, attempt recording
 //! - `input.rs` — event handling, matchers, feedback
 //! - `modes.rs` — free play, drills, repertoire, users, playback
+//! - `survival.rs` — survival runs: sliding chunk window, lives, scoring
 //! - `progress.rs` — progress report entries
+//! - `types.rs` — the public value types (modes, phase, summary)
 //!
 //! Platform adaptations (see `docs/porting.md`): `@Published` properties
 //! are plain fields (agg-gui repaints on `request_draw`), every
@@ -30,6 +32,8 @@ mod lifecycle;
 mod input;
 mod modes;
 mod progress;
+mod survival;
+mod types;
 
 #[cfg(test)]
 mod tests;
@@ -40,9 +44,7 @@ use std::rc::Rc;
 
 use crate::audio::{AudioOut, Metronome};
 use crate::core::{InputBackend, NoteEvent, SplitMix64};
-use crate::engine::{
-    InputStormDetector, OctaveAnchor, SelfPacedMatcher, TempoMatcher, TempoPolicy, TempoReport,
-};
+use crate::engine::{InputStormDetector, OctaveAnchor, SelfPacedMatcher, TempoMatcher, TempoPolicy};
 use crate::input::{SimulatedKeyboardBackend, UnpluggedBackend};
 use crate::notation::{NotationController, NotationRenderer};
 use crate::persistence::{AppDatabase, UserProfile};
@@ -51,136 +53,7 @@ use crate::skill::SkillModel;
 use crate::ui::KeyboardLayout;
 
 pub use progress::{ChordEntry, IntervalEntry, ProgressEntry, TransitionEntry};
-
-/// Which hand(s) training exercises target. Auto rotates by weakness and
-/// mixes in two-hand exercises once the bass seed range is mastered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum HandMode {
-    Right,
-    Left,
-    Both,
-    Auto,
-}
-
-impl HandMode {
-    pub const ALL: [HandMode; 4] = [HandMode::Right, HandMode::Left, HandMode::Both, HandMode::Auto];
-
-    /// Swift raw value (the persisted `hand_mode` setting).
-    pub fn raw_value(self) -> &'static str {
-        match self {
-            HandMode::Right => "Right",
-            HandMode::Left => "Left",
-            HandMode::Both => "Both",
-            HandMode::Auto => "Auto",
-        }
-    }
-
-    pub fn from_raw_value(raw: &str) -> Option<HandMode> {
-        match raw {
-            "Right" => Some(HandMode::Right),
-            "Left" => Some(HandMode::Left),
-            "Both" => Some(HandMode::Both),
-            "Auto" => Some(HandMode::Auto),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ExerciseSummary {
-    pub exercise_number: i64,
-    pub note_count: usize,
-    pub first_try_correct: usize,
-    pub error_count: usize,
-    pub mean_latency_ms: Option<f64>,
-    /// Display name of an item unlocked by this exercise (e.g. "A4"), if any.
-    pub newly_unlocked: Option<String>,
-    pub streak: i64,
-    /// Tempo-mode only.
-    pub timing: Option<TempoReport>,
-    pub bpm: Option<f64>,
-    /// Rhythm vocabulary unlocked by this exercise ("eighth notes"), if any.
-    pub rhythm_unlocked: Option<String>,
-    /// Repertoire only.
-    pub piece_title: Option<String>,
-    /// Worst measure of a repertoire play: (1-based measure number, errors).
-    pub worst_measure: Option<(usize, i64)>,
-    /// Aggregated micro-drill summary.
-    pub drill: bool,
-    /// Completion came from self-grading (Unplugged input), not detection.
-    pub self_verified: bool,
-}
-
-impl ExerciseSummary {
-    pub fn accuracy_percent(&self) -> i64 {
-        if self.note_count == 0 {
-            0
-        } else {
-            (self.first_try_correct as f64 / self.note_count as f64 * 100.0).round() as i64
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PacingMode {
-    SelfPaced,
-    Tempo,
-}
-
-impl PacingMode {
-    pub fn label(self) -> &'static str {
-        match self {
-            PacingMode::SelfPaced => "Self-paced",
-            PacingMode::Tempo => "Tempo",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InputSource {
-    Midi,
-    Keyboard,
-    Microphone,
-    /// Play a real, unconnected instrument and self-grade against playback.
-    SelfVerify,
-}
-
-impl InputSource {
-    pub fn label(self) -> &'static str {
-        match self {
-            InputSource::Midi => "MIDI",
-            InputSource::Keyboard => "Keys",
-            InputSource::Microphone => "Mic",
-            InputSource::SelfVerify => "Unplugged",
-        }
-    }
-
-    pub fn from_label(label: &str) -> Option<Self> {
-        match label {
-            "MIDI" => Some(InputSource::Midi),
-            "Keys" => Some(InputSource::Keyboard),
-            "Mic" => Some(InputSource::Microphone),
-            "Unplugged" => Some(InputSource::SelfVerify),
-            _ => None,
-        }
-    }
-
-    /// Sources with exact, low-latency note events carry tempo scoring and
-    /// the Free Play mirror; mic and self-verified play are self-paced only.
-    pub fn supports_timing(self) -> bool {
-        matches!(self, InputSource::Midi | InputSource::Keyboard)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-#[allow(clippy::large_enum_variant)] // one Phase lives per engine; the
-// summary payload is the point of the variant
-pub enum Phase {
-    Loading,
-    Playing,
-    Summary(ExerciseSummary),
-    Failed(String),
-}
+pub use types::{ExerciseSummary, HandMode, InputSource, PacingMode, Phase, SurvivalReport};
 
 /// Builds a platform backend per input source. Shells override to supply
 /// real MIDI / mic backends; the core default covers keyboard + unplugged
@@ -240,6 +113,9 @@ pub(crate) enum Deferred {
     TempoFinish,
     AutoAdvance { generation: i64 },
     PlaybackDone { generation: i64 },
+    /// Survival: swap the stitched window once the seam line's slide has
+    /// settled (stale generations are ignored).
+    SurvivalWindowSwap { generation: i64 },
 }
 
 pub struct SessionEngine {
@@ -280,6 +156,11 @@ pub struct SessionEngine {
     /// Practice-from-here (repertoire): the match event the replay starts
     /// from; 0 = the whole piece.
     pub(crate) replay_start_event: usize,
+    /// Survival mode (OQ-25): endless neutral-bias chunks at the current
+    /// level with an error budget of lives; one key per run.
+    pub(crate) is_survival: bool,
+    pub(crate) survival_lives: i32,
+    pub(crate) survival_notes: usize,
     /// Mash guard: wrong-strike storms suspend attempt recording until a
     /// clean event; the badge keeps it honest.
     pub(crate) stats_suppressed: bool,
@@ -392,6 +273,19 @@ pub struct SessionEngine {
     /// Tempo mode: beat-in-measure offset of the start spot (the sweep's
     /// beat dots stay aligned to the score when starting mid-measure).
     pub(crate) start_beat_offset: i32,
+    /// Survival run state: the best score (persisted per user), the run's
+    /// start on the host clock, the difficulty index of every chunk served
+    /// (score multiplier), the two lookahead chunks of the sliding window,
+    /// the event count of the active (top) line — crossing it schedules
+    /// the window swap — the run's key, and the window generation counter
+    /// (a stale scheduled swap is ignored).
+    pub(crate) survival_best: i64,
+    pub(crate) survival_start: f64,
+    pub(crate) survival_difficulties: Vec<f64>,
+    pub(crate) survival_upcoming: Vec<Exercise>,
+    pub(crate) survival_seam_events: usize,
+    pub(crate) survival_fifths: i32,
+    pub(crate) survival_window_gen: i64,
     pub(crate) tempo_finish_scheduled: bool,
     pub(crate) playback_generation: i64,
     /// Host-clock second the current Hear It playback started (drives the
@@ -421,6 +315,11 @@ pub const AUTO_ADVANCE_DELAY: f64 = 1.5;
 pub const AUTO_ADVANCE_UNLOCK_DELAY: f64 = 3.0;
 /// Below this confidence a note-on is not scored (mic mode).
 pub const CONFIDENCE_THRESHOLD: f64 = 0.6;
+/// Survival: the window swaps this long after the seam line's slide
+/// starts (the slide has settled; the swap is imperceptible).
+pub const SURVIVAL_SWAP_DELAY: f64 = 0.5;
+/// Survival chunks are one two-bar line each.
+pub const SURVIVAL_CHUNK_MEASURES: i32 = 2;
 
 impl SessionEngine {
     pub fn new(
@@ -456,6 +355,9 @@ impl SessionEngine {
             drill_cards_done: 0,
             drill_hint_keys: false,
             replay_start_event: 0,
+            is_survival: false,
+            survival_lives: 0,
+            survival_notes: 0,
             stats_suppressed: false,
             storm_detector: InputStormDetector::default(),
             inspection: None,
@@ -522,6 +424,13 @@ impl SessionEngine {
             drill_redo: Vec::new(),
             start_event_index: 0,
             start_beat_offset: 0,
+            survival_best: 0,
+            survival_start: 0.0,
+            survival_difficulties: Vec::new(),
+            survival_upcoming: Vec::new(),
+            survival_seam_events: 0,
+            survival_fifths: 0,
+            survival_window_gen: 0,
             tempo_finish_scheduled: false,
             playback_generation: 0,
             playback_started_at: 0.0,
@@ -615,6 +524,21 @@ impl SessionEngine {
     }
     pub fn stats_suppressed(&self) -> bool {
         self.stats_suppressed
+    }
+    pub fn is_survival(&self) -> bool {
+        self.is_survival
+    }
+    pub fn survival_lives(&self) -> i32 {
+        self.survival_lives
+    }
+    pub fn survival_notes(&self) -> usize {
+        self.survival_notes
+    }
+    pub fn survival_best(&self) -> i64 {
+        self.survival_best
+    }
+    pub fn survival_window_gen(&self) -> i64 {
+        self.survival_window_gen
     }
     pub fn inspection(&self) -> Option<&str> {
         self.inspection.as_deref()

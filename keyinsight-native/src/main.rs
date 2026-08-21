@@ -156,6 +156,11 @@ fn main() {
     }
 
     let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform::new());
+    // Dev convenience (the Swift `--survival` launch hook): start a
+    // survival run straight away.
+    if std::env::args().any(|arg| arg == "--survival") {
+        handles.engine.borrow_mut().enter_survival();
+    }
 
     demo_wgpu::native_shell::run(
         demo_wgpu::NativeShellConfig {
