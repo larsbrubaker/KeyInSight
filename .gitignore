@@ -20,5 +20,6 @@ Thumbs.db
 keyinsight-wasm/pkg
 
 # Claude Code / Cursor agent state
-.claude/
+.claude/*
+!.claude/agents/
 .cursor/

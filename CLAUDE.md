@@ -46,3 +46,15 @@ cargo run -p keyinsight-native  # desktop app (or `cargo dev` for hot reload)
 
 Windows / **PowerShell**. Heredocs (`<<'EOF'`) don't work — use PowerShell
 string variables with backtick-n (``n`) for newlines.
+
+## Orchestration pattern
+
+The main session acts as planner and orchestrator only — it should not write
+or edit code directly. All implementation is delegated to the `implementer`
+subagent (`.claude/agents/implementer.md`), one scoped step at a time. All
+post-change review is delegated to the `reviewer` subagent
+(`.claude/agents/reviewer.md`). When tests fail, delegate to the
+`fix-test-failures` subagent (`.claude/agents/fix-test-failures.md`) — it
+treats every failure as a real bug and resolves it through instrumentation
+and root-cause analysis, never by weakening tests. The main session handles
+only planning, architecture decisions, and synthesizing subagent results.
