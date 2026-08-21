@@ -17,7 +17,7 @@ use agg_gui::App;
 
 use crate::audio::{AudioOut, NullAudioOut};
 use crate::engine::SessionEngine;
-use crate::input::{MicBackend, SimulatedKeyboardBackend, UnpluggedBackend};
+use crate::input::{MicBackend, MidiBackend, SimulatedKeyboardBackend, UnpluggedBackend};
 use crate::notation::NotationWidget;
 use crate::persistence::{AppDatabase, Storage};
 use crate::ui::fonts::{size, UiFonts};
@@ -26,8 +26,7 @@ use crate::ui::{bottom_bar, sheets, DynamicLabel, PianoStripWidget};
 
 /// Platform capability surface. The native and WASM shells implement this
 /// so the core can obtain platform services without `cfg`-gating
-/// (`docs/platform-substitutions.md`). Grows as platform backends land
-/// (MIDI port enumeration, mic capture).
+/// (`docs/platform-substitutions.md`).
 pub trait KeyInSightPlatform: 'static {
     /// Persistent storage for the app database. `None` runs without
     /// persistence — the training loop still works (Swift behaved the
@@ -40,6 +39,13 @@ pub trait KeyInSightPlatform: 'static {
     /// silent.
     fn audio(&self) -> Rc<dyn AudioOut> {
         Rc::new(NullAudioOut)
+    }
+
+    /// MIDI input ports for the MIDI input source. `None` keeps the
+    /// simulated-keyboard substitution (MIDI input then behaves like
+    /// Keys).
+    fn midi(&self) -> Option<Rc<dyn crate::input::MidiPorts>> {
+        None
     }
 
     /// Microphone capture for the mic input source. `None` keeps the
@@ -217,11 +223,16 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
     let db = platform.storage().map(|storage| AppDatabase::open(storage, now_ms));
     let audio = platform.audio();
 
-    // Backend factory: the platform's real microphone when it has one;
-    // the simulated keyboard substitutes for MIDI (and mic, headless).
+    // Backend factory: the platform's real MIDI ports and microphone
+    // when it has them; the simulated keyboard substitutes headless.
+    let midi = platform.midi();
     let mic = platform.mic();
     let factory: crate::engine::BackendFactory = Box::new(move |source| match source {
         crate::engine::InputSource::SelfVerify => Box::new(UnpluggedBackend::new()),
+        crate::engine::InputSource::Midi => match &midi {
+            Some(ports) => Box::new(MidiBackend::new(Rc::clone(ports))),
+            None => Box::new(SimulatedKeyboardBackend::new()),
+        },
         crate::engine::InputSource::Microphone => match &mic {
             Some(mic) => Box::new(MicBackend::new(Rc::clone(mic))),
             None => Box::new(SimulatedKeyboardBackend::new()),

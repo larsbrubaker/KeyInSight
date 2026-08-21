@@ -40,5 +40,22 @@ web-sys = { version = "0.3", features = [
     "ScriptProcessorNode",
     "AudioProcessingEvent",
     "Navigator",
+    # Web MIDI (MIDI input backend).
+    "MidiAccess",
+    "MidiInput",
+    "MidiInputMap",
+    "MidiMessageEvent",
+    "MidiConnectionEvent",
+    "MidiPort",
+    "MidiOptions",
+    "MidiPortDeviceState",
+    "Event",
+    "Performance",
+    # Screen Wake Lock (display sleep guard): visibility tracking; the
+    # lock itself goes through js-sys Reflect (web-sys gates it behind
+    # `web_sys_unstable_apis`).
+    "Document",
+    "EventTarget",
+    "VisibilityState",
 ] }
 wasm-bindgen-futures = "0.4"

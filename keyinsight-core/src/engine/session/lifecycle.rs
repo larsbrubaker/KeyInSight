@@ -232,6 +232,7 @@ impl SessionEngine {
     /// pump the metronome scheduler + sweep. Shells call this every frame.
     pub fn tick(&mut self) {
         self.process_mic_input();
+        self.process_midi_input();
         // Input events.
         loop {
             let event = self.event_queue.borrow_mut().pop_front();

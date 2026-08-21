@@ -5,13 +5,15 @@
 //! keyboard / clipboard listeners) lives in `demo_wgpu::web_shell`. This
 //! crate contributes only what is genuinely specific to KeyInSight in a
 //! browser: the [`KeyInSightPlatform`] implementation (localStorage-backed
-//! persistence; Web MIDI, WebAudio, and getUserMedia land here next — see
-//! `docs/platform-substitutions.md`) and the per-frame engine tick.
+//! persistence, Web MIDI, WebAudio, getUserMedia, the Screen Wake Lock —
+//! see `docs/platform-substitutions.md`) and the per-frame engine tick.
 
 #![cfg(target_arch = "wasm32")]
 
 mod audio;
 mod mic;
+mod midi;
+mod wake_lock;
 
 use std::rc::Rc;
 
@@ -45,7 +47,17 @@ impl Storage for LocalStorage {
 }
 
 /// Browser implementation of the platform capability surface.
-struct WasmPlatform;
+struct WasmPlatform {
+    wake_lock: wake_lock::ScreenWakeLock,
+}
+
+impl WasmPlatform {
+    fn new() -> Self {
+        Self {
+            wake_lock: wake_lock::ScreenWakeLock::new(),
+        }
+    }
+}
 
 impl KeyInSightPlatform for WasmPlatform {
     fn storage(&self) -> Option<Box<dyn Storage>> {
@@ -58,9 +70,21 @@ impl KeyInSightPlatform for WasmPlatform {
         Rc::new(audio::WebAudioOut::new())
     }
 
+    /// Web MIDI input for the MIDI input source (every input, hot-plug
+    /// via `onstatechange`).
+    fn midi(&self) -> Option<Rc<dyn keyinsight_core::input::MidiPorts>> {
+        Some(Rc::new(midi::WebMidiPorts::new()))
+    }
+
     /// getUserMedia microphone capture for the mic input source.
     fn mic(&self) -> Option<Rc<dyn keyinsight_core::input::MicSource>> {
         Some(Rc::new(mic::WebMicSource::new()))
+    }
+
+    /// Screen Wake Lock while an exercise runs (the `DisplaySleepGuard`
+    /// power assertion); re-acquired when the tab becomes visible again.
+    fn set_display_awake(&self, active: bool) {
+        self.wake_lock.set_active(active);
     }
 }
 
@@ -74,7 +98,7 @@ pub fn start() {
     web_shell::start(
         "keyinsight-canvas",
         || {
-            let (app, handles) = build_keyinsight_app(UiFonts::bundled(), WasmPlatform);
+            let (app, handles) = build_keyinsight_app(UiFonts::bundled(), WasmPlatform::new());
             HANDLES.with(|h| *h.borrow_mut() = Some(handles));
             app
         },

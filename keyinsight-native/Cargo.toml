@@ -23,3 +23,6 @@ rfd = "0.17.2"
 cpal = "0.15"
 # Display-sleep guard while an exercise runs (`DisplaySleepGuard.swift`).
 keepawake = "0.6"
+# MIDI input (SwiftMIDI/CoreMIDI in the Swift app) — see
+# `docs/platform-substitutions.md`.
+midir = "0.10"

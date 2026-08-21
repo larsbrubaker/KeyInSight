@@ -4,11 +4,12 @@
 //! window and event loop, wgpu surface, input forwarding, frame painting)
 //! lives in `demo_wgpu::native_shell`. This file contributes only what is
 //! genuinely specific to KeyInSight on desktop: the [`KeyInSightPlatform`]
-//! implementation (file-backed storage under the OS app-data directory;
-//! MIDI via midir and audio out via cpal land here next — see
+//! implementation (file-backed storage under the OS app-data directory,
+//! MIDI via midir, audio out + mic via cpal — see
 //! `docs/platform-substitutions.md`) and the per-frame engine tick.
 
 mod audio;
+mod midi;
 
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -92,6 +93,11 @@ impl KeyInSightPlatform for NativePlatform {
         Rc::new(audio::CpalAudioOut::new())
     }
 
+    /// Real MIDI input over midir: every input port, hot-plug aware.
+    fn midi(&self) -> Option<Rc<dyn keyinsight_core::input::MidiPorts>> {
+        Some(Rc::new(midi::MidirPorts::new()))
+    }
+
     /// Real microphone capture: the mic input source detects played
     /// notes with the Goertzel bank. Opens the device lazily on first
     /// use.
@@ -162,8 +168,29 @@ fn main() {
         mic_smoke();
         return;
     }
+    // MIDI diagnostic: list input ports and print parsed note events
+    // for ~10 s (`keyinsight-native --midi-smoke`).
+    if std::env::args().any(|arg| arg == "--midi-smoke") {
+        midi::midi_smoke();
+        return;
+    }
 
     let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform::new());
+    // Dev convenience (the Swift `--piece <slug>` launch hook): open
+    // straight into a bundled piece.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(slug) = args
+        .iter()
+        .position(|arg| arg == "--piece")
+        .and_then(|i| args.get(i + 1))
+    {
+        if let Some(piece) = keyinsight_core::score::RepertoireLibrary::bundled()
+            .into_iter()
+            .find(|p| &p.slug == slug)
+        {
+            handles.engine.borrow_mut().start_piece(piece);
+        }
+    }
     // Dev convenience (the Swift `--survival` launch hook): start a
     // survival run straight away.
     if std::env::args().any(|arg| arg == "--survival") {

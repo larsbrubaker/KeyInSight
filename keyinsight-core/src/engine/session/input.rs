@@ -35,6 +35,21 @@ impl SessionEngine {
         *self.mic_level.borrow_mut() = level;
     }
 
+    /// Drive the MIDI backend (called from `tick`): drain the ports'
+    /// captured packets into note events (stamped with their packet
+    /// times) and keep the hot-plug rescan ticking.
+    pub(crate) fn process_midi_input(&mut self) {
+        let now = (self.clock)();
+        let Some(midi) = self
+            .backend
+            .as_any_mut()
+            .and_then(|any| any.downcast_mut::<crate::input::MidiBackend>())
+        else {
+            return;
+        };
+        midi.process(now);
+    }
+
     pub fn handle(&mut self, event: NoteEvent) {
         if let Some(calibration_tap) = &self.calibration_tap {
             if event.kind == NoteEventKind::On {

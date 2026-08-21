@@ -11,6 +11,7 @@ mod demo;
 mod drill;
 mod free_play;
 mod hands;
+mod midi;
 mod practice_from;
 mod robustness;
 mod survival;
