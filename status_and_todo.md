@@ -1,14 +1,37 @@
 # KeyInSight Port — Status & TODO
 
-*Updated 2026-07-07. This file is the hand-off point for resuming work on
+*Updated 2026-08-21. This file is the hand-off point for resuming work on
 another machine.*
+
+## 2026-08-21 — synced with upstream Swift 23066db → 9fc4f78
+
+All 24 upstream commits are ported, in dependency order, one green commit
+per step (311 tests, clippy clean, native + wasm build): hand modes with a
+per-staff skill model and bass unlock order, interval/chord-shape ladders
+with readiness probes and transition backoff, cross-staff unison avoidance,
+`InputStormDetector` mastery guard + 15 s latency outlier, synchronous
+chords (0.08 s window, `Restarted`), practice-from-here, the endless
+streak-centered micro-drill, free-play take recording/replay, survival mode
+(three-line sliding feed, three lives, `SurvivalPolicy` score), About +
+Profile sheets, Library search/filter/sort with two-hand grouping, two-staff
+Progress with trouble transitions and chords, 43 new bundled pieces (61).
+verovio-rust gained encoded system breaks, Verovio spacing + `JustifyX`
+justification, per-system layout info and single-bass-staff import for the
+feed. The Swift `DemoDriver` survival and practice-from-here acts are
+ported as engine integration tests (`engine/session/tests/{survival,demo}.rs`).
+
+**Pending on the human side:** push verovio-rust `main` (commits 9ad565e,
+39a750a, 9a55b79 on top of 8cb5e0f; local main is behind origin by one, so
+`git pull --rebase` first) — KeyInSight's submodule pin and CI depend on it.
+Delegation pattern now lives in `CLAUDE.md` → "Orchestration pattern" with
+`.claude/agents/{implementer,reviewer,fix-test-failures}.md`.
 
 ## Where things stand
 
 **Phase 1 (the true port of the Swift app) is complete for the core
 training loop and shipped.** Every module of the Swift reference
 (`keyinsight-swift-reference/`, pinned submodule) is ported to Rust with
-its test suite: 168 tests green across the workspace, clippy clean
+its test suite: 311 tests green across the workspace, clippy clean
 (`-D warnings`), CI and GitHub Pages deploys passing.
 
 Live app: <https://larsbrubaker.github.io/KeyInSight/>
@@ -117,18 +140,20 @@ substitutions, architecture, build/deploy). verovio-rust has its own
    tap-along flow with warm-ups, median input-latency compensation,
    piano keys pass through the modal (`ModalSheet::with_key_passthrough`).
 6. **DemoDriver** (`Engine/DemoDriver.swift`): the scripted `--demo`
-   playthrough. The engine surface it needs (`current_expected_midi`,
-   tempo debug) exists.
+   playthrough. Partly covered (2026-08-21) — Acts 3.5 and 8 run as
+   engine integration tests; the remaining acts and the headless shell
+   driver are still to port.
 7. ~~**Text-input overlays**~~ — done (2026-07-07):
    `ui/sheets/player_dialogs.rs`, add/rename dialogs with auto-focused
    TextField (modal subtree focus routing landed in agg-gui).
 8. **Engraving polish in verovio-rust**: ledger-line coverage check,
-   accidental spacing, beam slants, non-linear spacing, glyph metrics
+   accidental spacing, beam slants, glyph metrics
    from `bravura_metadata.json`-style font metadata instead of the fixed
    width table. Multi-system line breaking is done (2026-07-07):
    `LayoutOptions::system_width` wraps measures into rows, and the
    notation widget picks the wrap width that maximizes the fitted scale
-   (`NotationRenderer::fit_view`).
+   (`NotationRenderer::fit_view`). Verovio's power-law spacing and
+   horizontal justification (`JustifyX`) landed 2026-08-21.
 9. **Notation widget scroll** for long pieces (Swift used a scrollable
    page + auto-follow; the widget currently scales down).
 10. ~~**Progress sheet heat staff**~~ — done (2026-07-07): the Progress
