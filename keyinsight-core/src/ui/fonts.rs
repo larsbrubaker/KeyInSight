@@ -116,6 +116,12 @@ pub mod icon {
     pub const FLAG_CHECKERED: char = '\u{f11e}';
     /// `trophy.fill`
     pub const TROPHY: char = '\u{f091}';
+    /// `slider.horizontal.3` — the player Profile button
+    pub const SLIDERS: char = '\u{f1de}';
+    /// `questionmark.circle` — the About button
+    pub const QUESTION_CIRCLE: char = '\u{f059}';
+    /// `magnifyingglass` — the Library search box
+    pub const MAGNIFIER: char = '\u{f002}';
 }
 
 #[cfg(test)]
@@ -155,6 +161,9 @@ mod tests {
             ("PAUSE_CIRCLE", icon::PAUSE_CIRCLE),
             ("FLAG_CHECKERED", icon::FLAG_CHECKERED),
             ("TROPHY", icon::TROPHY),
+            ("SLIDERS", icon::SLIDERS),
+            ("QUESTION_CIRCLE", icon::QUESTION_CIRCLE),
+            ("MAGNIFIER", icon::MAGNIFIER),
         ] {
             assert!(
                 fonts.icons.glyph_visual_bounds(glyph, 16.0).is_some(),

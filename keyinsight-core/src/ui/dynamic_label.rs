@@ -44,6 +44,12 @@ impl DynamicLabel {
         self
     }
 
+    /// Horizontal alignment within the slot (the Swift centered footer text).
+    pub fn with_align(mut self, align: agg_gui::widgets::LabelAlign) -> Self {
+        self.label = self.label.with_align(align);
+        self
+    }
+
     /// Static color override (SwiftUI `.foregroundStyle`).
     pub fn with_color(mut self, color: Color) -> Self {
         self.label = self.label.with_color(color);

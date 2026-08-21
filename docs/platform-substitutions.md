@@ -8,6 +8,7 @@ source (see `docs/porting.md`).
 | Swift / Apple | Rust port |
 |---|---|
 | SwiftUI views | agg-gui widgets (see `docs/architecture.md`) |
+| `AttributedString(markdown:)` inline emphasis in `AboutSheet.swift` (`*italics*` in the `term` bodies) | agg-gui labels are plain text: the About sheet (`ui/sheets/about.rs`) ships the same copy with the emphasis asterisks stripped — the words stand unmarked |
 | Verovio SVG notation via WKWebView | [verovio-rust](https://github.com/larsbrubaker/verovio-rust) — our Rust port of Verovio engraving, rendering through `DrawCtx` with the Leipzig SMuFL font. It lives in its own repository because Verovio is LGPL-3.0 and this app is MIT; consume it only as the `verovio-rust` library dependency (pinned git submodule at `verovio-rust/`). Per-note ids, bounds lookup, color overrides, and the timemap replace Verovio's SVG-id APIs. The score always renders on a light page — music is always light. |
 | SwiftMIDI / CoreMIDI | `midir` on native; Web MIDI API via `wasm-bindgen` on WASM — both behind the core's `MidiPort` trait |
 | AVAudioEngine sampler + metronome | `cpal` output on native; WebAudio on WASM — behind the core's `AudioOut` trait. SMF playback renders through OxiSynth + the bundled CC0 Upright Piano KW SF2 (`audio::synth`); a synthesized piano voice is the no-soundfont fallback. |

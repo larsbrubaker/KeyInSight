@@ -169,6 +169,11 @@ fn main() {
     if std::env::args().any(|arg| arg == "--survival") {
         handles.engine.borrow_mut().enter_survival();
     }
+    // Dev convenience (the Swift `--library` launch hook): open the
+    // Library sheet straight away.
+    if std::env::args().any(|arg| arg == "--library") {
+        handles.open_library();
+    }
 
     demo_wgpu::native_shell::run(
         demo_wgpu::NativeShellConfig {

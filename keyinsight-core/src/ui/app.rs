@@ -74,9 +74,16 @@ pub type SharedPlatform = Rc<dyn KeyInSightPlatform>;
 /// Handles the platform shells keep: tick the engine every frame.
 pub struct KeyInSightHandles {
     pub engine: Rc<RefCell<SessionEngine>>,
+    /// The Library sheet's visibility cell (the `--library` dev launch hook).
+    show_library: Rc<std::cell::Cell<bool>>,
 }
 
 impl KeyInSightHandles {
+    /// Open the Library sheet (the Swift `--library` launch hook).
+    pub fn open_library(&self) {
+        side_panel::open_cell(&self.show_library);
+    }
+
     /// Advance the engine (input queue, deferred actions, metronome sweep).
     /// Shells call this once per painted frame.
     pub fn tick(&self) {
@@ -316,7 +323,10 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
 
     (
         App::new(Box::new(root)),
-        KeyInSightHandles { engine },
+        KeyInSightHandles {
+            engine,
+            show_library: Rc::clone(&cells.show_library),
+        },
     )
 }
 

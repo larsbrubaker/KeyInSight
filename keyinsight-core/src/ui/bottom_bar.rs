@@ -1,5 +1,6 @@
-//! Window-wide bottom bar: who is playing (picker + rename + add), plus
-//! session-level navigation (Keys, Resume Training, Progress).
+//! Window-wide bottom bar: who is playing (picker + rename + add +
+//! profile), plus session-level navigation (Keys, Resume Training,
+//! Progress, About).
 //!
 //! Ports `UI/BottomBar.swift`: the SwiftUI `Picker` maps to a `ComboBox`
 //! rebuilt when the player list changes, the borderless icon buttons map
@@ -91,6 +92,21 @@ pub fn build_bottom_bar(
         ));
     }
 
+    // Player settings (help "Player settings — octave following, keys
+    // strip"); needs a current player, like Rename.
+    {
+        let enabled = Rc::clone(engine);
+        let show = Rc::clone(&cells.show_profile);
+        row = row.add(Box::new(
+            Button::new("", Arc::clone(&fonts.regular))
+                .with_ghost().with_active_fn(|| false)
+                .with_compact()
+                .with_icon(icon::SLIDERS, Arc::clone(&fonts.icons))
+                .with_enabled_fn(move || enabled.borrow().current_user().is_some())
+                .on_click(move || open_cell(&show)),
+        ));
+    }
+
     row = row.add_flex(Box::new(crate::ui::hspacer()), 1.0);
 
     // Keys toggle for the current context (hidden in free play; the
@@ -140,6 +156,18 @@ pub fn build_bottom_bar(
                     generation.set(generation.get() + 1);
                     open_cell(&show_progress);
                 }),
+        ));
+    }
+    // About (help "How this trainer works — the skills, the vocabulary,
+    // the modes").
+    {
+        let show_about = Rc::clone(&cells.show_about);
+        row = row.add(Box::new(
+            Button::new("About", Arc::clone(&fonts.regular))
+                .with_ghost().with_active_fn(|| false)
+                .with_compact()
+                .with_icon(icon::QUESTION_CIRCLE, Arc::clone(&fonts.icons))
+                .on_click(move || open_cell(&show_about)),
         ));
     }
 

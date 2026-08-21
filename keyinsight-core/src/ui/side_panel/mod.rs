@@ -49,6 +49,10 @@ pub struct SidePanelCells {
     pub show_library: Rc<Cell<bool>>,
     pub show_progress: Rc<Cell<bool>>,
     pub show_calibration: Rc<Cell<bool>>,
+    /// The About ("How This Trainer Works") sheet.
+    pub show_about: Rc<Cell<bool>>,
+    /// The per-player Profile (helpers) sheet.
+    pub show_profile: Rc<Cell<bool>>,
     pub show_add_player: Rc<Cell<bool>>,
     pub show_rename_player: Rc<Cell<bool>>,
     /// The add/rename dialogs' text buffer (the Swift `@State userName`).
@@ -67,6 +71,8 @@ impl SidePanelCells {
             show_library: Rc::new(Cell::new(false)),
             show_progress: Rc::new(Cell::new(false)),
             show_calibration: Rc::new(Cell::new(false)),
+            show_about: Rc::new(Cell::new(false)),
+            show_profile: Rc::new(Cell::new(false)),
             show_add_player: Rc::new(Cell::new(false)),
             show_rename_player: Rc::new(Cell::new(false)),
             player_name: Rc::new(RefCell::new(String::new())),

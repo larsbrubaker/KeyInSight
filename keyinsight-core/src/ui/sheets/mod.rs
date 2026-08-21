@@ -3,12 +3,14 @@
 //! Ports the SwiftUI `.sheet`/`.alert` presentations from
 //! `UI/TrainingView.swift` + `UI/BottomBar.swift`: each becomes an
 //! agg-gui [`ModalSheet`] (centered fixed-size panel over a scrim)
-//! stacked above the app — Library, Progress, latency Calibration, and
-//! the add/rename player dialogs.
+//! stacked above the app — Library, Progress, latency Calibration, About,
+//! the player Profile, and the add/rename player dialogs.
 
+mod about;
 mod calibration;
 mod library;
 mod player_dialogs;
+mod profile;
 mod progress;
 
 pub use player_dialogs::{ADD_NAME_FOCUS, RENAME_NAME_FOCUS};
@@ -44,6 +46,8 @@ pub fn build_sheet_overlay(
             .add(library::build_library_sheet(engine, fonts, cells, platform))
             .add(progress::build_progress_sheet(engine, fonts, clock, cells))
             .add(calibration::build_calibration_sheet(engine, fonts, clock, cells))
+            .add(about::build_about_sheet(fonts, cells))
+            .add(profile::build_profile_sheet(engine, fonts, cells))
             .add(player_dialogs::build_add_player_dialog(engine, fonts, cells))
             .add(player_dialogs::build_rename_player_dialog(engine, fonts, cells)),
     )
