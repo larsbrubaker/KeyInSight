@@ -12,7 +12,7 @@ license = "MIT"
 repository = "https://github.com/larsbrubaker/KeyInSight"
 
 [workspace.dependencies]
-agg-gui = "0.2"
+agg-gui = "0.4"
 demo-wgpu = { path = "../agg-gui/demo-wgpu", default-features = false }
 # Music engraving (LGPL-3.0, its own repo — see docs/platform-substitutions.md).
 # rust-apps lays it out as a sibling; CI clones it the same way.

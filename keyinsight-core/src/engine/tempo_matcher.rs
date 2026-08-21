@@ -26,6 +26,9 @@ pub enum Timing {
 pub enum TempoResolution {
     Hit { timing: Timing, offset_ms: f64 },
     Missed,
+    /// Before the chosen start spot of a partial replay: never expected,
+    /// excluded from the report.
+    Skipped,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,7 +58,16 @@ impl TempoMatcher {
     pub const ON_TIME_MS: f64 = 45.0;
 
     pub fn new(expected: Vec<TempoExpected>) -> Self {
-        let resolutions = vec![None; expected.len()];
+        Self::with_start_index(expected, 0)
+    }
+
+    /// `start_index` begins the run mid-list (repertoire
+    /// practice-from-here); earlier events resolve as skipped up front.
+    pub fn with_start_index(expected: Vec<TempoExpected>, start_index: usize) -> Self {
+        let mut resolutions = vec![None; expected.len()];
+        for resolution in resolutions.iter_mut().take(start_index) {
+            *resolution = Some(TempoResolution::Skipped);
+        }
         Self {
             expected,
             resolutions,
@@ -112,7 +124,8 @@ impl TempoMatcher {
 
         // Same pitch, already consumed, still near its window: double strike.
         let is_double_strike = self.expected.iter().enumerate().any(|(i, event)| {
-            matches!(self.resolutions[i], Some(r) if r != TempoResolution::Missed)
+            matches!(self.resolutions[i],
+                Some(r) if r != TempoResolution::Missed && r != TempoResolution::Skipped)
                 && event.midi == midi
                 && (now_ms - event.target_ms).abs() <= Self::TOLERANCE_MS * 2.0
         });
@@ -154,6 +167,7 @@ impl TempoMatcher {
         let mut early = 0;
         let mut late = 0;
         let mut missed = 0;
+        let mut skipped = 0;
         let mut offsets: Vec<f64> = Vec::new();
         for resolution in &self.resolutions {
             match resolution {
@@ -166,11 +180,12 @@ impl TempoMatcher {
                     }
                 }
                 Some(TempoResolution::Missed) => missed += 1,
+                Some(TempoResolution::Skipped) => skipped += 1,
                 None => {}
             }
         }
         TempoReport {
-            expected_count: self.expected.len(),
+            expected_count: self.expected.len() - skipped,
             on_time,
             early,
             late,
@@ -228,14 +243,48 @@ impl TempoPolicy {
     }
 }
 
-/// Rhythm vocabulary advances on a clean, reasonably fast tempo exercise.
+/// Survival mode: endless neutral-bias reading with an error budget. The
+/// score rewards volume × reading rate × difficulty — notes/min is the
+/// fluency metric that unifies note naming and intervallic reading (you
+/// can't rush one without the other).
+pub struct SurvivalPolicy;
+
+impl SurvivalPolicy {
+    pub const START_LIVES: i32 = 3;
+
+    pub fn notes_per_minute(notes: i32, seconds: f64) -> f64 {
+        if seconds > 0.0 {
+            notes as f64 / (seconds / 60.0)
+        } else {
+            0.0
+        }
+    }
+
+    pub fn score(notes: i32, seconds: f64, difficulty: f64) -> i64 {
+        if notes <= 0 || seconds <= 0.0 {
+            return 0;
+        }
+        (notes as f64 * Self::notes_per_minute(notes, seconds) * difficulty.max(0.1)).round()
+            as i64
+    }
+}
+
+/// Rhythm vocabulary advances on a clean, reasonably fast tempo exercise —
+/// or on a streak of clean self-paced exercises, so Mic/Unplugged users
+/// aren't silently stuck at level 0.
 pub struct RhythmPolicy;
 
 impl RhythmPolicy {
     pub const MAX_LEVEL: i32 = 3;
+    /// Consecutive error-free self-paced training exercises per rung.
+    pub const SELF_PACED_CLEAN_STREAK: i32 = 5;
 
     pub fn should_advance(level: i32, report: &TempoReport, bpm: f64) -> bool {
         level < Self::MAX_LEVEL && report.hit_rate() >= 0.9 && report.missed == 0 && bpm >= 80.0
+    }
+
+    pub fn should_advance_self_paced(level: i32, clean_streak: i32) -> bool {
+        level < Self::MAX_LEVEL && clean_streak >= Self::SELF_PACED_CLEAN_STREAK
     }
 
     pub fn unlock_name(level: i32) -> Option<&'static str> {

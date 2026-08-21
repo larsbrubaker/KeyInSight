@@ -6,6 +6,14 @@
 
 use crate::score::Exercise;
 
+/// One captured free-play note, times in seconds from recording start.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RecordedNote {
+    pub midi: u8,
+    pub start_seconds: f64,
+    pub duration_seconds: f64,
+}
+
 pub struct MidiFileEncoder;
 
 impl MidiFileEncoder {
@@ -61,7 +69,11 @@ impl MidiFileEncoder {
         }
         track.extend(Self::variable_length((tick - last_tick).max(0) as usize));
         track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        Self::wrap_track(track)
+    }
 
+    /// SMF format-0 container around a finished track chunk.
+    fn wrap_track(track: Vec<u8>) -> Vec<u8> {
         let mut data: Vec<u8> = Vec::new();
         // MThd, fmt 0, 1 trk.
         data.extend_from_slice(&[0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1]);
@@ -79,6 +91,46 @@ impl MidiFileEncoder {
         ]);
         data.extend(track);
         data
+    }
+
+    /// Encodes a free-play recording at its real timing (fixed 60 BPM
+    /// grid: one quarter = one second, so ticks are just seconds × 480).
+    pub fn encode_recording(recording: &[RecordedNote], program: u8) -> Vec<u8> {
+        let mut events: Vec<(i32, [u8; 3])> = Vec::new();
+        for note in recording {
+            let start = (note.start_seconds * Self::TICKS_PER_QUARTER as f64) as i32;
+            let end = start + ((note.duration_seconds * Self::TICKS_PER_QUARTER as f64) as i32).max(1);
+            events.push((start, [0x90, note.midi, 80]));
+            events.push((end, [0x80, note.midi, 64]));
+        }
+        // Note-offs before note-ons at equal ticks (0x80 < 0x90).
+        events.sort_by_key(|(tick, bytes)| (*tick, bytes[0]));
+
+        let mut track: Vec<u8> = Vec::new();
+        track.extend_from_slice(&[0x00, 0xFF, 0x51, 0x03]); // tempo: 60 BPM
+        track.extend_from_slice(&[
+            ((1_000_000u32 >> 16) & 0xFF) as u8,
+            ((1_000_000u32 >> 8) & 0xFF) as u8,
+            (1_000_000u32 & 0xFF) as u8,
+        ]);
+        track.extend_from_slice(&[0x00, 0xC0, program]);
+        let mut last_tick = 0;
+        for (event_tick, bytes) in &events {
+            track.extend(Self::variable_length((event_tick - last_tick) as usize));
+            track.extend_from_slice(bytes);
+            last_tick = *event_tick;
+        }
+        track.extend(Self::variable_length(0));
+        track.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+        Self::wrap_track(track)
+    }
+
+    /// Wall-clock length of a recording, seconds.
+    pub fn recording_duration(recording: &[RecordedNote]) -> f64 {
+        recording
+            .iter()
+            .map(|n| n.start_seconds + n.duration_seconds)
+            .fold(0.0, f64::max)
     }
 
     /// Wall-clock length of the exercise at a tempo (longest voice wins),

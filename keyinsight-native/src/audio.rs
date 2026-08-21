@@ -19,7 +19,8 @@ struct Sound {
     samples: Arc<Vec<f32>>,
     /// Mixer frame at which sample 0 plays.
     start_frame: i64,
-    /// True for SMF playback (removed by `stop_smf`; clicks aren't).
+    /// True for SMF playback (removed by `stop_smf`; clicks and single
+    /// notes aren't).
     is_clip: bool,
 }
 
@@ -186,6 +187,23 @@ impl AudioOut for CpalAudioOut {
         let Some(handle) = &self.handle else { return };
         let mut mixer = handle.mixer.lock().expect("audio mixer lock");
         mixer.sounds.retain(|sound| !sound.is_clip);
+    }
+
+    fn play_note(&self, midi: u8, duration_seconds: f64) {
+        let Some(handle) = &self.handle else { return };
+        let Some(clip) = audio::render_note(midi, duration_seconds, handle.sample_rate) else {
+            return;
+        };
+        let mut mixer = handle.mixer.lock().expect("audio mixer lock");
+        // Its own voice on the mixer (like the Swift sampler note beside
+        // the sequencer): never cancels, and isn't cancelled by, SMF
+        // playback.
+        let start_frame = mixer.frame_for(host_now() + 0.05, handle.sample_rate);
+        mixer.sounds.push(Sound {
+            samples: Arc::new(clip.samples),
+            start_frame,
+            is_clip: false,
+        });
     }
 }
 

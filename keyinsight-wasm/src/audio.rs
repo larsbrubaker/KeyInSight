@@ -112,6 +112,23 @@ impl AudioOut for WebAudioOut {
             Some(())
         });
     }
+
+    fn play_note(&self, midi: u8, duration_seconds: f64) {
+        self.with_state(|state| {
+            let rate = state.ctx.sample_rate() as f64;
+            let clip = audio::render_note(midi, duration_seconds, rate)?;
+            let buffer = to_buffer(&state.ctx, &clip.samples)?;
+            let source = state.ctx.create_buffer_source().ok()?;
+            source.set_buffer(Some(&buffer));
+            source
+                .connect_with_audio_node(&state.ctx.destination())
+                .ok()?;
+            // Its own source (like the Swift sampler note beside the
+            // sequencer): not tracked as the clip, so it neither cancels
+            // nor is cancelled by SMF playback.
+            source.start().ok()
+        });
+    }
 }
 
 /// Copy a mono sample buffer into a WebAudio `AudioBuffer`.

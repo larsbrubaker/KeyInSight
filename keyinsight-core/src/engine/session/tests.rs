@@ -270,6 +270,7 @@ impl crate::audio::AudioOut for AcceptingAudio {
         true
     }
     fn stop_smf(&self) {}
+    fn play_note(&self, _midi: u8, _duration_seconds: f64) {}
 }
 
 /// During Hear It the keyboard strip shows the sounding keys: the first

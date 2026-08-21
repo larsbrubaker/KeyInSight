@@ -3,8 +3,8 @@
 //! `CalibrationSheet.median` is covered with the UI port).
 
 use crate::engine::{
-    RhythmPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy, TempoReport,
-    TempoResolution, Timing,
+    RhythmPolicy, SurvivalPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy,
+    TempoReport, TempoResolution, Timing,
 };
 use crate::score::{Exercise, NoteDuration, ScoreNote};
 use std::collections::HashSet;
@@ -136,6 +136,40 @@ fn report_aggregates() {
     assert!((report.hit_rate() - 0.75).abs() < 1e-9);
 }
 
+#[test]
+fn start_index_skips_earlier_events() {
+    let expected: Vec<TempoExpected> = [(60u8, 1000.0), (62, 2000.0), (64, 3000.0)]
+        .iter()
+        .map(|&(midi, target_ms)| TempoExpected { midi, target_ms })
+        .collect();
+    let mut m = TempoMatcher::with_start_index(expected.clone(), 1);
+    assert_eq!(m.resolutions[0], Some(TempoResolution::Skipped));
+    assert_eq!(m.first_unresolved_index(), Some(1));
+    assert!(!m.is_complete());
+    // A strike on the skipped event is not a double strike of a hit: it's
+    // wrong, anchored on the nearest unresolved event.
+    assert_eq!(
+        m.consume_note_on(60, 1000.0),
+        TempoOutcome::Wrong {
+            nearest_index: 1,
+            played: 60
+        }
+    );
+    // The sweep never touches skipped events.
+    assert_eq!(m.sweep(5000.0), [1, 2]);
+    assert_eq!(m.resolutions[0], Some(TempoResolution::Skipped));
+    assert!(m.is_complete());
+    // Skipped events are excluded from the report.
+    let report = m.report();
+    assert_eq!(report.expected_count, 2);
+    assert_eq!(report.missed, 2);
+
+    // Clamped: everything skipped is immediately complete.
+    let m = TempoMatcher::with_start_index(expected, 9);
+    assert!(m.is_complete());
+    assert_eq!(m.report().expected_count, 0);
+}
+
 // --- TempoPolicyTests ---
 
 fn report(hit_rate: f64, missed: usize) -> TempoReport {
@@ -185,6 +219,27 @@ fn rhythm_advance() {
     // Max level.
     assert!(!RhythmPolicy::should_advance(3, &report(1.0, 0), 132.0));
     assert_eq!(RhythmPolicy::unlock_name(2), Some("eighth notes"));
+}
+
+#[test]
+fn survival_score_rewards_volume_rate_and_difficulty() {
+    // 60 notes in 2 minutes at difficulty 3: 60 × 30 npm × 3.
+    assert_eq!(SurvivalPolicy::score(60, 120.0, 3.0), 5400);
+    // More notes at the same rate always scores higher.
+    assert!(SurvivalPolicy::score(120, 240.0, 3.0) > SurvivalPolicy::score(60, 120.0, 3.0));
+    assert_eq!(SurvivalPolicy::score(0, 60.0, 3.0), 0);
+    assert_eq!(SurvivalPolicy::notes_per_minute(30, 60.0), 30.0);
+}
+
+// `drillCardsNeverRepeatBackToBack` lives with the ExerciseGenerator port
+// (score tests).
+
+#[test]
+fn rhythm_advance_from_self_paced_streak() {
+    // A streak of clean self-paced exercises earns the rung too.
+    assert!(RhythmPolicy::should_advance_self_paced(0, 5));
+    assert!(!RhythmPolicy::should_advance_self_paced(0, 4));
+    assert!(!RhythmPolicy::should_advance_self_paced(3, 99));
 }
 
 // --- TimelineTests (score-model portion) ---

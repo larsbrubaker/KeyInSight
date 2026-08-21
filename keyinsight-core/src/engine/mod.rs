@@ -6,11 +6,13 @@
 #[cfg(test)]
 mod tests;
 
+mod input_storm;
 mod matcher;
 mod octave_anchor;
 mod session;
 mod tempo_matcher;
 
+pub use input_storm::InputStormDetector;
 pub use matcher::{SelfPacedMatcher, SelfPacedOutcome};
 pub use octave_anchor::OctaveAnchor;
 pub use session::{
@@ -18,6 +20,6 @@ pub use session::{
     PacingMode, Phase, ProgressEntry, SessionEngine, DRILL_LENGTH,
 };
 pub use tempo_matcher::{
-    RhythmPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy, TempoReport,
-    TempoResolution, Timing,
+    RhythmPolicy, SurvivalPolicy, TempoExpected, TempoMatcher, TempoOutcome, TempoPolicy,
+    TempoReport, TempoResolution, Timing,
 };

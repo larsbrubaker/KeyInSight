@@ -60,6 +60,11 @@ pub trait KeyInSightPlatform: 'static {
     fn open_musicxml(&self, on_file: Box<dyn FnOnce(Vec<u8>, String)>) {
         let _ = on_file;
     }
+
+    /// Hold off display sleep while an exercise is running. Piano input
+    /// (MIDI, mic, self-verify) isn't user activity to the OS (the Swift
+    /// `DisplaySleepGuard` power assertion). Default: no-op.
+    fn set_display_awake(&self, _active: bool) {}
 }
 
 /// The platform as a shared trait object — the sheets keep a handle for

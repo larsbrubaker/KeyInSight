@@ -136,6 +136,21 @@ impl SessionEngine {
                     self.current_note_start = (self.clock)();
                 }
             }
+            SelfPacedOutcome::Restarted { index, played } => {
+                // The chord broke apart (a member landed outside the
+                // window): error, and only the late strike carries into the
+                // new attempt. Unreachable until the session feeds event
+                // timestamps to `consume_note_on_at` (the chord-window
+                // wiring step, which also ports `resetEventMarks` and
+                // `survivalLifeLost`).
+                self.log(&event, "chord_break", Some(index), None);
+                self.errors_on_current_note += 1;
+                self.errors_this_exercise += 1;
+                self.record_measure_error(index);
+                self.streak = 0;
+                let staff = self.staff_for(played, index);
+                self.record_attempt(played, staff, true, None);
+            }
             SelfPacedOutcome::Wrong { index, played } => {
                 self.log(&event, "wrong", Some(index), None);
                 self.errors_on_current_note += 1;

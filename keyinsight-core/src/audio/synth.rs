@@ -12,6 +12,8 @@
 //! feeds the samples to a cpal stream, the WASM shell wraps them in
 //! WebAudio `AudioBuffer`s, and tests assert on them directly.
 
+use super::{MidiFileEncoder, RecordedNote};
+
 /// A rendered mono PCM clip.
 pub struct Clip {
     pub samples: Vec<f32>,
@@ -53,6 +55,18 @@ pub fn render_smf(smf: &[u8], sample_rate: f64) -> Option<Clip> {
         render_notes_soundfont(&notes, sample_rate)
             .unwrap_or_else(|| render_notes(&notes, sample_rate)),
     )
+}
+
+/// Render one immediate note (velocity 80, the Swift `playNote`) to a
+/// mono PCM clip — the shells mix it as its own voice so it never
+/// disturbs in-flight SMF playback.
+pub fn render_note(midi: u8, duration_seconds: f64, sample_rate: f64) -> Option<Clip> {
+    let recording = [RecordedNote {
+        midi,
+        start_seconds: 0.0,
+        duration_seconds,
+    }];
+    render_smf(&MidiFileEncoder::encode_recording(&recording, 0), sample_rate)
 }
 
 /// Render through OxiSynth + the bundled SF2. `None` when the soundfont

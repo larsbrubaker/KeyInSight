@@ -1,7 +1,9 @@
 //! Ports `Tests/KeyInSightTests/MicTests.swift` (YinPitchDetectorTests +
 //! NoteGateTests) and `MIDIFileEncoderTests.swift`.
 
-use crate::audio::{GateAction, MidiFileEncoder, NoteGate, YinPitchDetector};
+use crate::audio::{
+    parse_smf, render_note, GateAction, MidiFileEncoder, NoteGate, RecordedNote, YinPitchDetector,
+};
 use crate::core::{Rng64, SplitMix64};
 use crate::score::{Exercise, NoteDuration, ScoreNote};
 
@@ -440,4 +442,93 @@ fn unexplained_attack_reports_uncertain_not_wrong() {
         !events.contains(&Detected::On(60)),
         "C4 must not fire for a played F4: {events:?}"
     );
+}
+
+// --- Free-play recording encoder (no Swift test; behavior from
+// MIDIFileEncoder.swift `encode(recording:)`) ---
+
+fn recorded(midi: u8, start_seconds: f64, duration_seconds: f64) -> RecordedNote {
+    RecordedNote {
+        midi,
+        start_seconds,
+        duration_seconds,
+    }
+}
+
+#[test]
+fn recording_header_is_a_60_bpm_format_0_file() {
+    let bytes = MidiFileEncoder::encode_recording(&[recorded(60, 0.0, 1.0)], 0);
+    assert_eq!(
+        &bytes[0..14],
+        [0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, 0x01, 0xE0]
+    );
+    assert_eq!(&bytes[14..18], [0x4D, 0x54, 0x72, 0x6B]);
+    let declared = ((bytes[18] as usize) << 24)
+        | ((bytes[19] as usize) << 16)
+        | ((bytes[20] as usize) << 8)
+        | bytes[21] as usize;
+    assert_eq!(declared, bytes.len() - 22);
+    // Tempo 60 BPM = 1_000_000 µs/quarter = 0x0F4240, then program 0.
+    assert_eq!(
+        &bytes[22..32],
+        [0x00, 0xFF, 0x51, 0x03, 0x0F, 0x42, 0x40, 0x00, 0xC0, 0x00]
+    );
+    // One second = 480 ticks: on at 0, off at 480 (0x83 0x60), then a zero
+    // delta before end-of-track.
+    assert_eq!(
+        &bytes[32..],
+        [0x00, 0x90, 60, 80, 0x83, 0x60, 0x80, 60, 64, 0x00, 0xFF, 0x2F, 0x00]
+    );
+}
+
+#[test]
+fn recording_offs_precede_ons_at_equal_ticks() {
+    // C4 for one second, then D4 starting exactly when C4 ends.
+    let bytes =
+        MidiFileEncoder::encode_recording(&[recorded(60, 0.0, 1.0), recorded(62, 1.0, 0.5)], 0);
+    let notes = parse_smf(&bytes).unwrap();
+    assert_eq!(notes.len(), 2);
+    // Track bytes after the 10-byte tempo+program prefix.
+    let track = &bytes[32..];
+    assert_eq!(&track[0..4], [0x00, 0x90, 60, 80]);
+    assert_eq!(&track[4..9], [0x83, 0x60, 0x80, 60, 64]); // off first
+    assert_eq!(&track[9..13], [0x00, 0x90, 62, 80]); // then on, same tick
+}
+
+#[test]
+fn recording_notes_last_at_least_one_tick() {
+    let bytes = MidiFileEncoder::encode_recording(&[recorded(64, 0.25, 0.0)], 0);
+    let track = &bytes[32..];
+    // On at tick 120 (0x78), off one tick later.
+    assert_eq!(&track[0..4], [0x78, 0x90, 64, 80]);
+    assert_eq!(&track[4..8], [0x01, 0x80, 64, 64]);
+}
+
+#[test]
+fn recording_timing_survives_the_parser() {
+    let recording = [
+        recorded(60, 0.0, 0.5),
+        recorded(64, 0.0, 0.5),
+        recorded(67, 1.25, 2.0),
+    ];
+    let notes = parse_smf(&MidiFileEncoder::encode_recording(&recording, 0)).unwrap();
+    let starts: Vec<f64> = notes.iter().map(|n| n.start_seconds).collect();
+    assert_eq!(starts, [0.0, 0.0, 1.25]);
+    let durations: Vec<f64> = notes.iter().map(|n| n.duration_seconds).collect();
+    assert_eq!(durations, [0.5, 0.5, 2.0]);
+}
+
+#[test]
+fn recording_duration_is_the_latest_release() {
+    assert_eq!(MidiFileEncoder::recording_duration(&[]), 0.0);
+    let recording = [recorded(60, 0.0, 3.0), recorded(62, 1.0, 1.0)];
+    assert_eq!(MidiFileEncoder::recording_duration(&recording), 3.0);
+}
+
+#[test]
+fn render_note_is_a_short_audible_clip() {
+    let clip = render_note(60, 0.8, SAMPLE_RATE).unwrap();
+    assert!(clip.duration_seconds() >= 0.8);
+    assert!(clip.samples.iter().any(|s| s.abs() > 0.01));
+    assert!(clip.samples.iter().all(|s| s.abs() <= 1.0));
 }

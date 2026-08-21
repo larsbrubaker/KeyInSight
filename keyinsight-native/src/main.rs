@@ -10,6 +10,7 @@
 
 mod audio;
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -58,7 +59,19 @@ impl Storage for FileStorage {
 }
 
 /// Desktop implementation of the platform capability surface.
-struct NativePlatform;
+struct NativePlatform {
+    /// The held display-awake assertion (`DisplaySleepGuard.swift`);
+    /// dropping it releases.
+    display_guard: RefCell<Option<keepawake::KeepAwake>>,
+}
+
+impl NativePlatform {
+    fn new() -> Self {
+        Self {
+            display_guard: RefCell::new(None),
+        }
+    }
+}
 
 impl KeyInSightPlatform for NativePlatform {
     fn storage(&self) -> Option<Box<dyn Storage>> {
@@ -103,6 +116,29 @@ impl KeyInSightPlatform for NativePlatform {
             Err(err) => eprintln!("KeyInSight: couldn't read {}: {err}", path.display()),
         }
     }
+
+    /// Display-sleep guard: `SetThreadExecutionState` on Windows, an
+    /// IOKit power assertion on macOS, a D-Bus inhibitor on Linux.
+    fn set_display_awake(&self, active: bool) {
+        let mut guard = self.display_guard.borrow_mut();
+        if active == guard.is_some() {
+            return;
+        }
+        if active {
+            match keepawake::Builder::default()
+                .display(true)
+                .reason("KeyInSight exercise in progress")
+                .app_name("KeyInSight")
+                .app_reverse_domain("com.keyinsight.app")
+                .create()
+            {
+                Ok(handle) => *guard = Some(handle),
+                Err(err) => eprintln!("KeyInSight: display-awake unavailable ({err})"),
+            }
+        } else {
+            *guard = None;
+        }
+    }
 }
 
 fn main() {
@@ -119,7 +155,7 @@ fn main() {
         return;
     }
 
-    let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform);
+    let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform::new());
 
     demo_wgpu::native_shell::run(
         demo_wgpu::NativeShellConfig {

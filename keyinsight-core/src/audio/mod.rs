@@ -17,8 +17,8 @@ mod yin;
 
 pub use goertzel::{goertzel_power, midi_frequency, GoertzelDetector};
 pub use metronome::Metronome;
-pub use midi_file_encoder::MidiFileEncoder;
-pub use synth::{click_samples, parse_smf, render_smf, Clip, SmfNote};
+pub use midi_file_encoder::{MidiFileEncoder, RecordedNote};
+pub use synth::{click_samples, parse_smf, render_note, render_smf, Clip, SmfNote};
 pub use yin::{Detection, GateAction, NoteGate, YinPitchDetector};
 
 /// Platform audio output. All methods are fire-and-forget; failures are the
@@ -34,6 +34,10 @@ pub trait AudioOut {
 
     /// Stop any in-progress SMF playback.
     fn stop_smf(&self);
+
+    /// One immediate note, no sequencer — the drill card's auditory
+    /// anchor. Sounds alongside (never cancels) in-flight SMF playback.
+    fn play_note(&self, midi: u8, duration_seconds: f64);
 }
 
 /// Silent output — headless runs, tests, and shells before audio lands.
@@ -47,4 +51,6 @@ impl AudioOut for NullAudioOut {
     }
 
     fn stop_smf(&self) {}
+
+    fn play_note(&self, _midi: u8, _duration_seconds: f64) {}
 }

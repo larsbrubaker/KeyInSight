@@ -394,6 +394,7 @@ impl SessionEngine {
             return match tempo_matcher.resolutions[index] {
                 Some(TempoResolution::Hit { .. }) => Some(NoteState::Correct),
                 Some(TempoResolution::Missed) => Some(NoteState::Missed),
+                Some(TempoResolution::Skipped) => Some(NoteState::Locked),
                 None => {
                     if Some(index) == tempo_matcher.first_unresolved_index() {
                         Some(NoteState::Current)
