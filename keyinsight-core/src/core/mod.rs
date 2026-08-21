@@ -6,7 +6,9 @@
 mod note_event;
 mod pitch_spelling;
 mod split_mix64;
+mod transition;
 
 pub use note_event::{InputBackend, NoteEvent, NoteEventKind};
 pub use pitch_spelling::PitchSpelling;
 pub use split_mix64::{Rng64, SplitMix64};
+pub use transition::transition_key;

@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
 use crate::core::PitchSpelling;
-use crate::score::Exercise;
+use crate::score::{Exercise, ScoreNote};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DifficultyDescriptors {
@@ -29,7 +29,7 @@ pub struct DifficultyDescriptors {
 impl DifficultyDescriptors {
     pub fn compute(exercise: &Exercise) -> DifficultyDescriptors {
         let midis: Vec<i32> = exercise
-            .sounded_notes()
+            .all_sounded_notes()
             .iter()
             .map(|n| n.midi.expect("sounded notes always carry a pitch") as i32)
             .collect();
@@ -46,20 +46,36 @@ impl DifficultyDescriptors {
             acc + p * p.log2()
         });
 
-        let measure_count = exercise.measures().len().max(1);
+        let measure_count = exercise.measure_count().max(1);
 
+        // Melodic motion is per voice — no phantom interval at the
+        // treble→bass concatenation seam.
         let mut leaps = 0;
         let mut intervals = 0;
         let mut bigrams: HashSet<i32> = HashSet::new();
-        for pair in midis.windows(2) {
-            let (a, b) = (pair[0], pair[1]);
-            intervals += 1;
-            let diatonic =
-                (PitchSpelling::diatonic_index(b as u8) - PitchSpelling::diatonic_index(a as u8)).abs();
-            if diatonic >= 2 {
-                leaps += 1;
+        let bass_sounded: Vec<ScoreNote> = exercise
+            .bass_notes
+            .iter()
+            .copied()
+            .filter(|n| !n.is_rest())
+            .collect();
+        let voices = [exercise.sounded_notes(), bass_sounded];
+        for voice in &voices {
+            let voice_midis: Vec<i32> = voice
+                .iter()
+                .map(|n| n.midi.expect("sounded notes always carry a pitch") as i32)
+                .collect();
+            for pair in voice_midis.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                intervals += 1;
+                let diatonic = (PitchSpelling::diatonic_index(b as u8)
+                    - PitchSpelling::diatonic_index(a as u8))
+                .abs();
+                if diatonic >= 2 {
+                    leaps += 1;
+                }
+                bigrams.insert(a * 128 + b);
             }
-            bigrams.insert(a * 128 + b);
         }
 
         DifficultyDescriptors {
@@ -77,6 +93,16 @@ impl DifficultyDescriptors {
                 1.0 - bigrams.len() as f64 / intervals as f64
             },
         }
+    }
+
+    /// Interpretable difficulty index — the rough sort key until the scale
+    /// is calibrated against syllabus lists (OQ-15). Shared by the library
+    /// sort and the survival-mode score multiplier.
+    pub fn index(&self) -> f64 {
+        self.pitch_entropy_bits
+            + 3.0 * self.leap_ratio
+            + self.notes_per_measure / 2.0
+            + self.range_semitones as f64 / 12.0
     }
 
     /// Sorted-keys JSON, mirroring the Swift `JSONEncoder` with

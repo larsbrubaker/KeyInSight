@@ -1,7 +1,8 @@
 //! Encodes the internal score model to MusicXML (round-trips through the
 //! importer; feeds notation tooling and export).
-//! Subset: single part, treble or grand staff, key signatures, one meter,
-//! rests, dotted values, eighths, chords, ties.
+//! Subset: single part, treble / bass-only / grand staff, key signatures,
+//! one meter, rests, dotted values, eighths, chords, ties, encoded system
+//! breaks.
 //!
 //! Ports `Score/MusicXMLEncoder.swift`, preserving the exact output shape
 //! (whitespace included) so encoder tests can pin strings.
@@ -19,10 +20,20 @@ impl MusicXmlEncoder {
     pub const DIVISIONS: i32 = 2;
 
     pub fn encode(exercise: &Exercise) -> String {
-        // Any bass-staff note (or a bass voice) promotes the whole score to
-        // a grand staff (brace, both clefs, per-note staff routing).
-        let grand_staff = exercise.is_two_voice()
-            || exercise.notes.iter().any(|n| n.staff == Staff::Bass);
+        Self::encode_with_breaks(exercise, None)
+    }
+
+    /// `system_break_every`: emit an encoded system break every N measures
+    /// (survival's two-bar lines) — meaningful only when the renderer is
+    /// asked to honor encoded breaks.
+    pub fn encode_with_breaks(exercise: &Exercise, system_break_every: Option<usize>) -> String {
+        // A bass-only score (left-hand content) renders as one bass-clef
+        // staff. Otherwise any bass-staff note (or a bass voice) promotes
+        // the whole score to a grand staff (brace, both clefs, per-note
+        // staff routing).
+        let bass_only = exercise.is_bass_only();
+        let grand_staff = !bass_only
+            && (exercise.is_two_voice() || exercise.notes.iter().any(|n| n.staff == Staff::Bass));
         let treble_measures = exercise.measures();
         let bass_measures = exercise.bass_measures();
         let treble_ties = Exercise::tie_roles(&exercise.notes);
@@ -30,15 +41,34 @@ impl MusicXmlEncoder {
         let mut treble_index = 0;
         let mut bass_index = 0;
         let mut measures_xml = String::new();
+        let empty: Vec<ScoreNote> = Vec::new();
         for i in 0..exercise.measure_count() {
+            let system_break = match system_break_every {
+                Some(n) if i > 0 && i % n == 0 => "
+          <print new-system=\"yes\"/>",
+                _ => "",
+            };
             let clefs = if grand_staff {
-                "\n        <staves>2</staves>\n        <clef number=\"1\"><sign>G</sign><line>2</line></clef>\n        <clef number=\"2\"><sign>F</sign><line>4</line></clef>"
+                "
+        <staves>2</staves>
+        <clef number=\"1\"><sign>G</sign><line>2</line></clef>
+        <clef number=\"2\"><sign>F</sign><line>4</line></clef>".to_string()
             } else {
-                "\n        <clef><sign>G</sign><line>2</line></clef>"
+                format!(
+                    "
+        <clef><sign>{}</sign><line>{}</line></clef>",
+                    if bass_only { "F" } else { "G" },
+                    if bass_only { 4 } else { 2 }
+                )
             };
             let attributes = if i == 0 {
                 format!(
-                    "\n      <attributes>\n        <divisions>{}</divisions>\n        <key><fifths>{}</fifths></key>\n        <time><beats>{}</beats><beat-type>4</beat-type></time>{}\n      </attributes>",
+                    "
+      <attributes>
+        <divisions>{}</divisions>
+        <key><fifths>{}</fifths></key>
+        <time><beats>{}</beats><beat-type>4</beat-type></time>{}
+      </attributes>",
                     Self::DIVISIONS,
                     exercise.fifths,
                     exercise.beats_per_measure,
@@ -47,9 +77,26 @@ impl MusicXmlEncoder {
             } else {
                 String::new()
             };
-            let empty: Vec<ScoreNote> = Vec::new();
-            let treble = treble_measures.get(i).unwrap_or(&empty);
             let mut notes = String::new();
+            if bass_only {
+                // The bass voice IS the score: written as the sole voice on
+                // the single staff, no <backup>.
+                for note in bass_measures.get(i).unwrap_or(&empty) {
+                    notes += &note_xml(note, exercise.fifths, false, 1, bass_ties[bass_index]);
+                    bass_index += 1;
+                }
+                measures_xml += &format!(
+                    "
+    <measure number=\"{}\">{}{}{}
+    </measure>",
+                    i + 1,
+                    system_break,
+                    attributes,
+                    notes
+                );
+                continue;
+            }
+            let treble = treble_measures.get(i).unwrap_or(&empty);
             for note in treble {
                 notes += &note_xml(
                     note,
@@ -70,7 +117,8 @@ impl MusicXmlEncoder {
                         .map(|n| n.duration.units())
                         .sum();
                     notes +=
-                        &format!("\n      <backup><duration>{treble_units}</duration></backup>");
+                        &format!("
+      <backup><duration>{treble_units}</duration></backup>");
                     for note in bass {
                         let routed = ScoreNote {
                             midi: note.midi,
@@ -91,14 +139,22 @@ impl MusicXmlEncoder {
                 }
             }
             measures_xml += &format!(
-                "\n    <measure number=\"{}\">{}{}\n    </measure>",
+                "
+    <measure number=\"{}\">{}{}{}
+    </measure>",
                 i + 1,
+                system_break,
                 attributes,
                 notes
             );
         }
         format!(
-            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<score-partwise version=\"4.0\">\n  <part-list><score-part id=\"P1\"><part-name print-object=\"no\">Piano</part-name></score-part></part-list>\n  <part id=\"P1\">{measures_xml}\n  </part>\n</score-partwise>"
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<score-partwise version=\"4.0\">
+  <part-list><score-part id=\"P1\"><part-name print-object=\"no\">Piano</part-name></score-part></part-list>
+  <part id=\"P1\">{measures_xml}
+  </part>
+</score-partwise>"
         )
     }
 

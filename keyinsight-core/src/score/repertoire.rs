@@ -23,11 +23,7 @@ impl RepertoirePiece {
     /// Interpretable difficulty index from the descriptors — a rough sort
     /// key until the scale is calibrated against syllabus lists.
     pub fn difficulty_index(&self) -> f64 {
-        let d = DifficultyDescriptors::compute(&self.exercise);
-        d.pitch_entropy_bits
-            + 3.0 * d.leap_ratio
-            + d.notes_per_measure / 2.0
-            + d.range_semitones as f64 / 12.0
+        DifficultyDescriptors::compute(&self.exercise).index()
     }
 }
 

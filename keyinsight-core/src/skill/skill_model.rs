@@ -1,10 +1,17 @@
 //! Skill-item model (pitch items; EWMA mastery).
 //!
 //! The user never picks a level: when every active item is mastered, the
-//! next item in `UNLOCK_ORDER` joins the active set (keybr's model).
-//! Weakness weights feed the generator so weak items are drilled harder.
+//! next item in the staff's unlock order joins the active set (keybr's
+//! model). Weakness weights feed the generator so weak items are drilled
+//! harder.
 //!
-//! Ports `Skill/SkillModel.swift`.
+//! One instance per staff: the treble model drives right-hand content, the
+//! bass model left-hand content. Both read the same stats table —
+//! staff-prefixed item names keep them separate.
+//!
+//! Ports `Skill/SkillModel.swift` (pitch items, mastery, keys,
+//! progression). The interval ladder, transition backoff, and chord-shape
+//! ladder live in the sibling `ladder` module.
 
 use std::collections::{HashMap, HashSet};
 
@@ -18,6 +25,14 @@ pub const UNLOCK_ORDER: [u8; 20] = [
     60, 62, 64, 65, 67, // seed: C4 D4 E4 F4 G4
     69, 59, 71, 57, 72, 55, 74, 76, 77, 79, // A4 B3 B4 A3 C5 G3 D5 E5 F5 G5
     66, 61, 68, 63, 70, // F#4 C#4 G#4 D#4 A#4
+];
+/// Bass-staff mirror: seed C3–G3 (the left hand's C position), then
+/// outward expansion alternating down/up (low-ledger extremes last), then
+/// sharps at the drilled register.
+pub const BASS_UNLOCK_ORDER: [u8; 20] = [
+    48, 50, 52, 53, 55, // seed: C3 D3 E3 F3 G3
+    47, 57, 45, 59, 43, 60, 41, 40, 38, 36, // B2 A3 A2 B3 G2 C4 F2 E2 D2 C2
+    54, 49, 56, 51, 58, // F#3 C#3 G#3 D#3 A#3
 ];
 pub const SEED_COUNT: usize = 5;
 
@@ -47,14 +62,15 @@ impl ItemState {
     }
 }
 
-/// Interval items: melodic intervals as *shapes* (signed diatonic deltas,
-/// ±3 max — matches the generator's leap bound). Always active; they
-/// emerge from the pitch walk rather than unlocking.
+/// Interval items: melodic intervals as *shapes* (signed diatonic deltas).
+/// Unison through 4th are always active; larger sizes unlock through the
+/// interval ladder (readiness probes, OQ-25).
 #[derive(Debug, Clone)]
 pub struct IntervalState {
     pub delta: i32,
     pub stat: Option<PitchItemStat>,
     pub weight: f64,
+    pub unlocked: bool,
 }
 
 impl IntervalState {
@@ -63,7 +79,7 @@ impl IntervalState {
     }
 }
 
-pub const INTERVAL_DELTAS: [i32; 7] = [-3, -2, -1, 0, 1, 2, 3];
+pub const INTERVAL_DELTAS: [i32; 15] = [-7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7];
 
 #[derive(Debug, Clone)]
 pub struct KeyOption {
@@ -74,10 +90,16 @@ pub struct KeyOption {
 }
 
 pub struct SkillModel {
+    staff: Staff,
     unlocked_count: usize,
-    /// One state per item in `UNLOCK_ORDER` order; refreshed from stats.
+    /// One state per item in the staff's unlock order; refreshed from stats.
     pub states: Vec<ItemState>,
     pub interval_states: Vec<IntervalState>,
+    /// All stats by item name from the last refresh (probes, transitions,
+    /// chord shapes read from here).
+    pub(super) stats_by_name: HashMap<String, PitchItemStat>,
+    pub(super) interval_unlocked_count: usize,
+    pub(super) chord_unlocked_count: usize,
 }
 
 impl Default for SkillModel {
@@ -87,14 +109,39 @@ impl Default for SkillModel {
 }
 
 impl SkillModel {
+    /// Treble-staff model (the Swift default `staff:` argument).
     pub fn new(unlocked_count: usize) -> Self {
+        Self::with_staff(Staff::Treble, unlocked_count)
+    }
+
+    pub fn with_staff(staff: Staff, unlocked_count: usize) -> Self {
         let mut model = Self {
-            unlocked_count: unlocked_count.clamp(SEED_COUNT, UNLOCK_ORDER.len()),
+            staff,
+            unlocked_count: unlocked_count.clamp(SEED_COUNT, Self::unlock_order(staff).len()),
             states: Vec::new(),
             interval_states: Vec::new(),
+            stats_by_name: HashMap::new(),
+            interval_unlocked_count: 0,
+            chord_unlocked_count: 0,
         };
         model.refresh(&[]);
         model
+    }
+
+    pub fn unlock_order(staff: Staff) -> &'static [u8; 20] {
+        match staff {
+            Staff::Bass => &BASS_UNLOCK_ORDER,
+            Staff::Treble => &UNLOCK_ORDER,
+        }
+    }
+
+    pub fn staff(&self) -> Staff {
+        self.staff
+    }
+
+    /// This staff's unlock order.
+    pub fn order(&self) -> &'static [u8; 20] {
+        Self::unlock_order(self.staff)
     }
 
     pub fn unlocked_count(&self) -> usize {
@@ -105,8 +152,8 @@ impl SkillModel {
         format!("treble:{}", PitchSpelling::name(midi))
     }
 
-    /// Staff-aware item name: bass-staff attempts accrue under "bass:" so
-    /// the stats are ready when bass skill items unlock.
+    /// Staff-aware item name: each staff's attempts accrue under its own
+    /// prefix ("treble:C4" / "bass:C3") — same key, different reading skill.
     pub fn item_name_on(midi: u8, staff: Staff) -> String {
         let staff_name = match staff {
             Staff::Treble => "treble",
@@ -115,26 +162,28 @@ impl SkillModel {
         format!("{staff_name}:{}", PitchSpelling::name(midi))
     }
 
-    /// "interval:unison", "interval:2nd-up", "interval:4th-down", …
+    /// "interval:unison", "interval:2nd-up", "interval:octave-down", …
     pub fn interval_item_name(delta: i32) -> String {
         if delta == 0 {
             return "interval:unison".to_string();
         }
-        let size = ["", "2nd", "3rd", "4th"][delta.unsigned_abs().min(3) as usize];
-        format!(
-            "interval:{size}-{}",
-            if delta > 0 { "up" } else { "down" }
-        )
+        let size = ["", "2nd", "3rd", "4th", "5th", "6th", "7th", "octave"]
+            [delta.unsigned_abs().min(7) as usize];
+        format!("interval:{size}-{}", if delta > 0 { "up" } else { "down" })
     }
 
     pub fn refresh(&mut self, stats: &[PitchItemStat]) {
-        let by_name: HashMap<&str, &PitchItemStat> =
-            stats.iter().map(|s| (s.item.as_str(), s)).collect();
-        self.states = UNLOCK_ORDER
+        self.stats_by_name = stats.iter().map(|s| (s.item.clone(), s.clone())).collect();
+        let staff = self.staff;
+        self.states = self
+            .order()
             .iter()
             .enumerate()
             .map(|(index, &midi)| {
-                let stat = by_name.get(Self::item_name(midi).as_str()).map(|&s| s.clone());
+                let stat = self
+                    .stats_by_name
+                    .get(Self::item_name_on(midi, staff).as_str())
+                    .cloned();
                 ItemState {
                     midi,
                     unlocked: index < self.unlocked_count,
@@ -144,12 +193,14 @@ impl SkillModel {
                 }
             })
             .collect();
+        let unlocked_sizes = self.unlocked_interval_sizes();
         self.interval_states = INTERVAL_DELTAS
             .iter()
             .map(|&delta| {
-                let stat = by_name
+                let stat = self
+                    .stats_by_name
                     .get(Self::interval_item_name(delta).as_str())
-                    .map(|&s| s.clone());
+                    .cloned();
                 // Unseen intervals are not "frontier" the way unseen pitches
                 // are (unison/steps appear constantly): neutral until data
                 // exists.
@@ -161,6 +212,7 @@ impl SkillModel {
                     delta,
                     stat,
                     weight,
+                    unlocked: unlocked_sizes.contains(&delta.abs()),
                 }
             })
             .collect();
@@ -219,10 +271,17 @@ impl SkillModel {
     }
 
     pub fn next_locked_midi(&self) -> Option<u8> {
-        if self.unlocked_count < UNLOCK_ORDER.len() {
-            Some(UNLOCK_ORDER[self.unlocked_count])
+        self.order().get(self.unlocked_count).copied()
+    }
+
+    /// Average weakness across the active set (1.0 = all neutral). The auto
+    /// hand rotation drills the weaker hand more.
+    pub fn mean_active_weight(&self) -> f64 {
+        let weights: Vec<f64> = self.active_states().iter().map(|s| s.weight).collect();
+        if weights.is_empty() {
+            1.0
         } else {
-            None
+            weights.iter().sum::<f64>() / weights.len() as f64
         }
     }
 
@@ -260,28 +319,46 @@ impl SkillModel {
         pcs
     }
 
+    /// The signature sharps at this staff's drilled register
+    /// (F#4/C#4 treble, F#3/C#3 bass).
+    fn f_sharp_midi(&self) -> u8 {
+        if self.staff == Staff::Bass {
+            54
+        } else {
+            66
+        }
+    }
+
+    fn c_sharp_midi(&self) -> u8 {
+        if self.staff == Staff::Bass {
+            49
+        } else {
+            61
+        }
+    }
+
     /// A key becomes available once its signature sharps are unlocked
     /// items — then exercises in that key drill the sharp at its staff
     /// position with the signature carrying the pattern (no accidental per
     /// note).
     pub fn available_keys(&self) -> Vec<KeyOption> {
         let unlocked_midis: HashSet<u8> = self.active_states().iter().map(|s| s.midi).collect();
+        let f_sharp = self.f_sharp_midi();
+        let c_sharp = self.c_sharp_midi();
         let mut keys = vec![KeyOption {
             fifths: 0,
             weight: 1.0,
         }];
-        if unlocked_midis.contains(&66) {
-            // F#4
+        if unlocked_midis.contains(&f_sharp) {
             keys.push(KeyOption {
                 fifths: 1,
-                weight: self.key_weight(&[66]),
+                weight: self.key_weight(&[f_sharp]),
             });
         }
-        if unlocked_midis.contains(&66) && unlocked_midis.contains(&61) {
-            // + C#4
+        if unlocked_midis.contains(&f_sharp) && unlocked_midis.contains(&c_sharp) {
             keys.push(KeyOption {
                 fifths: 2,
-                weight: self.key_weight(&[66, 61]),
+                weight: self.key_weight(&[f_sharp, c_sharp]),
             });
         }
         keys
@@ -319,14 +396,14 @@ impl SkillModel {
     /// Unlocks the next item if every active item is mastered.
     /// Caller persists `unlocked_count` and re-refreshes.
     pub fn unlock_if_earned(&mut self) -> Option<u8> {
-        if !self.all_active_mastered() || self.unlocked_count >= UNLOCK_ORDER.len() {
+        if !self.all_active_mastered() || self.unlocked_count >= self.order().len() {
             return None;
         }
         self.unlocked_count += 1;
-        Some(UNLOCK_ORDER[self.unlocked_count - 1])
+        Some(self.order()[self.unlocked_count - 1])
     }
 
     pub fn set_unlocked_count(&mut self, count: usize) {
-        self.unlocked_count = count.clamp(SEED_COUNT, UNLOCK_ORDER.len());
+        self.unlocked_count = count.clamp(SEED_COUNT, self.order().len());
     }
 }

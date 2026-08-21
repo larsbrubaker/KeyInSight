@@ -200,6 +200,35 @@ impl Exercise {
         !self.bass_notes.is_empty()
     }
 
+    /// Left-hand-only content: just the bass voice. Renders as a single
+    /// bass-clef staff, not a grand staff.
+    pub fn is_bass_only(&self) -> bool {
+        self.notes.is_empty() && !self.bass_notes.is_empty()
+    }
+
+    /// Fully-measured exercises joined end to end (survival's sliding
+    /// window). All must share meter and key.
+    fn stitched2(a: &Exercise, b: &Exercise) -> Exercise {
+        let mut notes = a.notes.clone();
+        notes.extend_from_slice(&b.notes);
+        let mut bass_notes = a.bass_notes.clone();
+        bass_notes.extend_from_slice(&b.bass_notes);
+        Exercise {
+            notes,
+            bass_notes,
+            beats_per_measure: a.beats_per_measure,
+            fifths: a.fifths,
+        }
+    }
+
+    /// Joins `parts` in order; precondition: `parts` is non-empty.
+    pub fn stitched(parts: &[Exercise]) -> Exercise {
+        debug_assert!(!parts.is_empty());
+        parts[1..]
+            .iter()
+            .fold(parts[0].clone(), |acc, part| Self::stitched2(&acc, part))
+    }
+
     pub fn units_per_measure(&self) -> i32 {
         self.beats_per_measure * 2
     }

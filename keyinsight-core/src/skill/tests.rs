@@ -1,5 +1,8 @@
 //! Ports `Tests/KeyInSightTests/SkillModelTests.swift` (including the
-//! DifficultyDescriptorTests suite, which lives in the same Swift file).
+//! DifficultyDescriptorTests and ProgressionLadderTests suites, which live
+//! in the same Swift file).
+
+use std::collections::HashSet;
 
 use crate::persistence::PitchItemStat;
 use crate::score::{DifficultyDescriptors, Exercise, NoteDuration, ScoreNote};
@@ -258,4 +261,103 @@ fn json_round_trips() {
     ));
     let decoded: DifficultyDescriptors = serde_json::from_str(&d.json()).unwrap();
     assert_eq!(decoded, d);
+}
+
+#[test]
+fn transition_item_names() {
+    assert_eq!(SkillModel::transition_item_name(66, 71), "move:F#4>B4");
+    assert_eq!(SkillModel::transition_item_name(48, 55), "move:C3>G3");
+}
+
+// --- ProgressionLadderTests: interval ladder, transition backoff, and
+// chord shape-classes (OQ-25). ---
+
+fn ladder_stat(item: &str, attempts: i64, ewma_error: f64) -> PitchItemStat {
+    PitchItemStat {
+        item: item.to_string(),
+        attempts,
+        errors: (attempts as f64 * ewma_error) as i64,
+        ewma_error,
+        ewma_latency_ms: Some(900.0),
+        last_seen_at_ms: NOW,
+    }
+}
+
+#[test]
+fn interval_ladder_starts_at_fourths_and_probes_fifths() {
+    let mut model = SkillModel::default();
+    assert_eq!(
+        model.unlocked_interval_sizes(),
+        HashSet::from([0, 1, 2, 3])
+    );
+    assert_eq!(model.next_locked_interval_size(), Some(4));
+    // Not ready: only one direction probed.
+    model.refresh(&[ladder_stat("interval:5th-up", 3, 0.1)]);
+    assert_eq!(model.unlock_interval_if_ready(), None);
+    // Ready: both directions, low error (lax gates).
+    model.refresh(&[
+        ladder_stat("interval:5th-up", 2, 0.2),
+        ladder_stat("interval:5th-down", 2, 0.3),
+    ]);
+    assert_eq!(model.unlock_interval_if_ready(), Some(4));
+    assert!(model.unlocked_interval_sizes().contains(&4));
+    assert_eq!(model.next_locked_interval_size(), Some(5));
+}
+
+#[test]
+fn interval_ladder_rejects_weak_probes() {
+    let mut model = SkillModel::default();
+    model.refresh(&[
+        ladder_stat("interval:5th-up", 4, 0.6),
+        ladder_stat("interval:5th-down", 4, 0.1),
+    ]);
+    assert_eq!(model.unlock_interval_if_ready(), None);
+}
+
+#[test]
+fn interval_item_names_cover_the_ladder() {
+    assert_eq!(SkillModel::interval_item_name(4), "interval:5th-up");
+    assert_eq!(SkillModel::interval_item_name(-7), "interval:octave-down");
+    assert_eq!(SkillModel::interval_item_name(6), "interval:7th-up");
+}
+
+#[test]
+fn transition_weights_respect_the_data_floor() {
+    let mut model = SkillModel::default();
+    model.refresh(&[
+        // At floor: included.
+        ladder_stat(&SkillModel::transition_item_name(66, 71), 6, 0.5),
+        // Sparse: excluded.
+        ladder_stat(&SkillModel::transition_item_name(60, 62), 3, 0.9),
+    ]);
+    let weights = model.transition_weights(&[60, 62, 66, 71]);
+    let strong = weights.get(&SkillModel::transition_key(66, 71));
+    assert!(strong.is_some());
+    assert!(*strong.unwrap() > 2.0);
+    assert!(!weights.contains_key(&SkillModel::transition_key(60, 62)));
+}
+
+#[test]
+fn chord_ladder_unlocks_through_probes() {
+    let mut model = SkillModel::default();
+    assert!(model.unlocked_chord_shapes().is_empty());
+    assert_eq!(model.next_locked_chord_shape(), Some("chord:harm-5th"));
+    model.refresh(&[ladder_stat("chord:harm-5th", 4, 0.2)]);
+    assert_eq!(model.unlock_chord_if_ready(), Some("chord:harm-5th"));
+    assert_eq!(model.unlocked_chord_shapes(), ["chord:harm-5th"]);
+    assert_eq!(model.next_locked_chord_shape(), Some("chord:harm-3rd"));
+    // Weak probes don't unlock.
+    model.refresh(&[ladder_stat("chord:harm-3rd", 6, 0.5)]);
+    assert_eq!(model.unlock_chord_if_ready(), None);
+}
+
+#[test]
+fn chord_shape_classification() {
+    assert_eq!(SkillModel::chord_shape_name(&[60, 64]), Some("chord:harm-3rd")); // C4+E4
+    assert_eq!(SkillModel::chord_shape_name(&[67, 60]), Some("chord:harm-5th")); // order-free
+    assert_eq!(SkillModel::chord_shape_name(&[60, 69]), Some("chord:harm-6th")); // C4+A4
+    assert_eq!(SkillModel::chord_shape_name(&[60, 72]), Some("chord:harm-octave"));
+    assert_eq!(SkillModel::chord_shape_name(&[60, 64, 67]), Some("chord:triad"));
+    assert_eq!(SkillModel::chord_shape_name(&[60]), None);
+    assert_eq!(SkillModel::chord_shape_name(&[60, 62]), None); // 2nds untracked
 }
