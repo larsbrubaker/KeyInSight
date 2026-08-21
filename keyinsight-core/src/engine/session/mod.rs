@@ -213,6 +213,24 @@ impl DrillTotals {
     }
 }
 
+/// One free-play note as recorded: onset and release in seconds from
+/// the take's first note (`end` is None while the key is still held).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct FreePlayRecordedNote {
+    pub midi: u8,
+    pub start: f64,
+    pub end: Option<f64>,
+}
+
+/// A drill card owed a retrieval rep, due once `drill_cards_done` reaches
+/// `due`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DrillRedo {
+    pub midi: u8,
+    pub staff: Staff,
+    pub due: i32,
+}
+
 /// A deadline-driven action (ports the Swift `DispatchQueue.asyncAfter`
 /// calls); processed by [`SessionEngine::tick`].
 pub(crate) enum Deferred {
@@ -253,8 +271,15 @@ pub struct SessionEngine {
     pub(crate) is_free_play: bool,
     pub(crate) free_play_count: usize,
     pub(crate) last_free_play_note: Option<String>,
-    /// Micro-drill: flash cards remaining, None = not drilling.
-    pub(crate) drill_remaining: Option<i32>,
+    /// Micro-drill: endless flash cards until End Drill.
+    pub(crate) drill_active: bool,
+    pub(crate) drill_cards_done: i32,
+    /// Drill correction: a wrong strike reveals the keyboard with the
+    /// right key lit until the card is answered.
+    pub(crate) drill_hint_keys: bool,
+    /// Practice-from-here (repertoire): the match event the replay starts
+    /// from; 0 = the whole piece.
+    pub(crate) replay_start_event: usize,
     /// Mash guard: wrong-strike storms suspend attempt recording until a
     /// clean event; the badge keeps it honest.
     pub(crate) stats_suppressed: bool,
@@ -352,7 +377,21 @@ pub struct SessionEngine {
     /// Free play events: each entry is one chord (usually a single note).
     pub(crate) free_play_chords: Vec<Vec<u8>>,
     pub(crate) free_play_last_onset: f64,
+    /// Free play take: every note-on with its onset (seconds from the
+    /// first note) and release, for replay at the played timing.
+    pub(crate) free_play_recording: Vec<FreePlayRecordedNote>,
+    pub(crate) free_play_record_start: Option<f64>,
     pub(crate) drill_totals: DrillTotals,
+    /// The previous card's pitch — an identical card is invisible.
+    pub(crate) last_drill_midi: Option<u8>,
+    /// Retrieval reps: a missed card comes back a few cards later.
+    pub(crate) drill_redo: Vec<DrillRedo>,
+    /// Practice-from-here: events before this index are never expected —
+    /// grayed out, excluded from counts and reports. 0 outside repertoire.
+    pub(crate) start_event_index: usize,
+    /// Tempo mode: beat-in-measure offset of the start spot (the sweep's
+    /// beat dots stay aligned to the score when starting mid-measure).
+    pub(crate) start_beat_offset: i32,
     pub(crate) tempo_finish_scheduled: bool,
     pub(crate) playback_generation: i64,
     /// Host-clock second the current Hear It playback started (drives the
@@ -369,7 +408,10 @@ pub struct SessionEngine {
     pub(crate) deferred: Vec<(f64, Deferred)>,
 }
 
+/// Drill cards the scripted demo plays before ending the (endless) drill.
 pub const DRILL_LENGTH: i32 = 12;
+/// A missed drill card returns for a retrieval rep this many cards later.
+pub const DRILL_REDO_DELAY_CARDS: i32 = 3;
 pub const PLAYBACK_PREVIEW_BPM: f64 = 90.0;
 /// Latencies past this are a break, not slowness (mastery robustness).
 pub const LATENCY_OUTLIER_MS: f64 = 15_000.0;
@@ -410,7 +452,10 @@ impl SessionEngine {
             is_free_play: false,
             free_play_count: 0,
             last_free_play_note: None,
-            drill_remaining: None,
+            drill_active: false,
+            drill_cards_done: 0,
+            drill_hint_keys: false,
+            replay_start_event: 0,
             stats_suppressed: false,
             storm_detector: InputStormDetector::default(),
             inspection: None,
@@ -470,7 +515,13 @@ impl SessionEngine {
             anchor_eligible: false,
             free_play_chords: Vec::new(),
             free_play_last_onset: 0.0,
+            free_play_recording: Vec::new(),
+            free_play_record_start: None,
             drill_totals: DrillTotals::new(),
+            last_drill_midi: None,
+            drill_redo: Vec::new(),
+            start_event_index: 0,
+            start_beat_offset: 0,
             tempo_finish_scheduled: false,
             playback_generation: 0,
             playback_started_at: 0.0,
@@ -538,8 +589,29 @@ impl SessionEngine {
     pub fn last_free_play_note(&self) -> Option<&str> {
         self.last_free_play_note.as_deref()
     }
-    pub fn drill_remaining(&self) -> Option<i32> {
-        self.drill_remaining
+    pub fn drill_active(&self) -> bool {
+        self.drill_active
+    }
+    pub fn drill_cards_done(&self) -> i32 {
+        self.drill_cards_done
+    }
+    pub fn drill_hint_keys(&self) -> bool {
+        self.drill_hint_keys
+    }
+    pub fn replay_start_event(&self) -> usize {
+        self.replay_start_event
+    }
+    /// 1-based measure number of the start spot (side panel chip).
+    pub fn replay_start_measure(&self) -> usize {
+        if self.start_event_index < self.measure_by_event.len() {
+            self.measure_by_event[self.start_event_index] + 1
+        } else {
+            1
+        }
+    }
+    /// "Note k of note_count", counted from the start spot.
+    pub fn current_note_number(&self) -> usize {
+        (self.current_note_index + 1).saturating_sub(self.start_event_index).max(1)
     }
     pub fn stats_suppressed(&self) -> bool {
         self.stats_suppressed
@@ -563,10 +635,22 @@ impl SessionEngine {
         if !self.is_playing_back {
             return Vec::new();
         }
+        let elapsed = (self.clock)() - self.playback_started_at;
+        if self.is_free_play {
+            // A free-play take replays at its recorded timing.
+            let mut sounding: Vec<u8> = self
+                .free_play_recorded_notes()
+                .iter()
+                .filter(|n| elapsed >= n.start_seconds && elapsed < n.start_seconds + n.duration_seconds)
+                .map(|n| n.midi)
+                .collect();
+            sounding.sort_unstable();
+            sounding.dedup();
+            return sounding;
+        }
         let Some(exercise) = &self.exercise else {
             return Vec::new();
         };
-        let elapsed = (self.clock)() - self.playback_started_at;
         let unit_seconds = (60.0 / PLAYBACK_PREVIEW_BPM) / 2.0;
         let mut sounding = Vec::new();
         for voice in [&exercise.notes, &exercise.bass_notes] {

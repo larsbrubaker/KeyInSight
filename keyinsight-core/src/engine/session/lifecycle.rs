@@ -186,7 +186,7 @@ impl SessionEngine {
             db.set_setting("hand_mode", new_mode.raw_value(), now);
         }
         // Only regenerate when it changes the next thing we'd show.
-        if self.active_piece.is_none() && self.drill_remaining.is_none() && !self.is_free_play {
+        if self.active_piece.is_none() && !self.drill_active && !self.is_free_play {
             self.next_exercise();
         }
     }

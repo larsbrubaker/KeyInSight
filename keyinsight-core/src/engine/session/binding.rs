@@ -80,6 +80,9 @@ impl SessionEngine {
 
     /// The state each note should show based on actual play progress.
     pub(crate) fn natural_state(&self, index: usize) -> Option<NoteState> {
+        if index < self.start_event_index {
+            return Some(NoteState::Locked); // before the start spot
+        }
         if let Some(matcher) = &self.matcher {
             if matcher.is_complete() {
                 return Some(NoteState::Correct);

@@ -4,10 +4,10 @@
 
 use crate::core::{NoteEvent, PitchSpelling};
 use crate::engine::session::{
-    Deferred, DrillTotals, InputSource, PacingMode, Phase, SessionEngine, DRILL_LENGTH,
-    PLAYBACK_PREVIEW_BPM,
+    Deferred, DrillTotals, ExerciseSummary, FreePlayRecordedNote, InputSource, PacingMode, Phase,
+    SessionEngine, PLAYBACK_PREVIEW_BPM,
 };
-use crate::audio::MidiFileEncoder;
+use crate::audio::{MidiFileEncoder, RecordedNote};
 use crate::persistence::ExerciseRecord;
 use crate::score::{Exercise, FreePlayScore, MusicXmlEncoder, RepertoirePiece};
 
@@ -20,15 +20,16 @@ impl SessionEngine {
     /// True when off the adaptive-training path (repertoire, free play, or
     /// a drill) — the bottom bar offers Resume Training.
     pub fn is_diverted(&self) -> bool {
-        self.active_piece.is_some() || self.is_free_play || self.drill_remaining.is_some()
+        self.active_piece.is_some() || self.is_free_play || self.drill_active
     }
 
     /// Back to normal adaptive exercises from any mode.
     pub fn resume_training(&mut self) {
         self.is_free_play = false;
         self.active_piece = None;
-        self.drill_remaining = None;
+        self.drill_active = false;
         self.pending_replay = None;
+        self.replay_start_event = 0;
         self.persist_active_piece(None);
         self.next_exercise();
     }
@@ -48,7 +49,8 @@ impl SessionEngine {
         };
         self.is_free_play = false;
         self.active_piece = None;
-        self.drill_remaining = None;
+        self.drill_active = false;
+        self.replay_start_event = 0;
         self.pending_replay = Some(exercise);
         self.next_exercise();
     }
@@ -58,13 +60,49 @@ impl SessionEngine {
         self.persist_active_piece(Some(&piece.slug));
         self.active_piece = Some(piece);
         self.is_free_play = false;
-        self.drill_remaining = None;
+        self.drill_active = false;
+        self.replay_start_event = 0;
         self.next_exercise();
     }
 
     pub fn exit_repertoire(&mut self) {
         self.active_piece = None;
+        self.replay_start_event = 0;
         self.persist_active_piece(None);
+        self.next_exercise();
+    }
+
+    // --- Practice from here (repertoire) ---
+
+    /// Clicking a note in a piece restarts the replay from that spot (the
+    /// notation widget's click path resolves a note id here).
+    pub fn note_clicked(&mut self, id: &str) {
+        let Some(index) = self
+            .event_ids
+            .iter()
+            .position(|ids| ids.iter().any(|candidate| candidate == id))
+        else {
+            return;
+        };
+        self.practice_from(index);
+    }
+
+    /// Restart the piece replay from a match event (the click path resolves
+    /// note ids to indices; the demo drives this directly).
+    pub fn practice_from(&mut self, event_index: usize) {
+        if self.active_piece.is_none() {
+            return;
+        }
+        self.replay_start_event = event_index;
+        self.next_exercise();
+    }
+
+    /// Back to replaying the whole piece.
+    pub fn clear_replay_start(&mut self) {
+        if self.replay_start_event == 0 {
+            return;
+        }
+        self.replay_start_event = 0;
         self.next_exercise();
     }
 
@@ -126,8 +164,9 @@ impl SessionEngine {
         self.exercise_number = 0;
         self.is_free_play = false;
         self.active_piece = None;
-        self.drill_remaining = None;
+        self.drill_active = false;
         self.pending_replay = None;
+        self.replay_start_event = 0;
         // Restore this user's preferred input source.
         let restored = self.stored_input_source().unwrap_or(InputSource::Keyboard);
         if restored != self.input_source {
@@ -217,11 +256,14 @@ impl SessionEngine {
         self.stop_playback();
         self.teardown_tempo_run();
         self.active_piece = None;
-        self.drill_remaining = None;
+        self.drill_active = false;
         self.is_free_play = true;
+        self.replay_start_event = 0;
         self.current_expected_midis.clear();
         self.free_play_chords.clear();
         self.free_play_last_onset = 0.0;
+        self.free_play_recording.clear();
+        self.free_play_record_start = None;
         self.free_play_count = 0;
         self.last_free_play_note = None;
         self.matcher = None;
@@ -232,13 +274,53 @@ impl SessionEngine {
     }
 
     pub fn exit_free_play(&mut self) {
+        self.stop_playback();
         self.is_free_play = false;
         self.next_exercise();
     }
 
+    /// Replay this free-play take at the timing it was played.
+    pub fn toggle_free_play_playback(&mut self) {
+        if self.is_playing_back {
+            self.stop_playback();
+            return;
+        }
+        if !self.is_free_play || self.free_play_recording.is_empty() {
+            return;
+        }
+        let notes = self.free_play_recorded_notes();
+        let smf = MidiFileEncoder::encode_recording(&notes, 0);
+        if !self.audio.play_smf(&smf) {
+            return;
+        }
+        self.is_playing_back = true;
+        self.playback_started_at = (self.clock)();
+        self.playback_generation += 1;
+        let generation = self.playback_generation;
+        let duration = MidiFileEncoder::recording_duration(&notes);
+        self.defer_action(duration + 0.25, Deferred::PlaybackDone { generation });
+        agg_gui::animation::request_draw();
+    }
+
+    /// The take as playable notes. Still-held (or lost) note-offs get a
+    /// readable default duration.
+    pub(crate) fn free_play_recorded_notes(&self) -> Vec<RecordedNote> {
+        self.free_play_recording
+            .iter()
+            .map(|note| RecordedNote {
+                midi: note.midi,
+                start_seconds: note.start,
+                duration_seconds: (note.end.unwrap_or(note.start + 0.5) - note.start).max(0.1),
+            })
+            .collect()
+    }
+
     pub fn clear_free_play(&mut self) {
+        self.stop_playback();
         self.free_play_chords.clear();
         self.free_play_last_onset = 0.0;
+        self.free_play_recording.clear();
+        self.free_play_record_start = None;
         self.free_play_count = 0;
         self.last_free_play_note = None;
         self.render_free_play();
@@ -246,8 +328,26 @@ impl SessionEngine {
 
     pub(crate) fn handle_free_play(&mut self, event: &NoteEvent) {
         if event.kind != crate::core::NoteEventKind::On {
+            // Note-off closes the newest open recording entry for that key.
+            if let Some(start) = self.free_play_record_start {
+                if let Some(open) = self
+                    .free_play_recording
+                    .iter_mut()
+                    .rev()
+                    .find(|note| note.midi == event.midi && note.end.is_none())
+                {
+                    open.end = Some(event.timestamp - start);
+                }
+            }
             return;
         }
+        let record_start = self.free_play_record_start.unwrap_or(event.timestamp);
+        self.free_play_record_start = Some(record_start);
+        self.free_play_recording.push(FreePlayRecordedNote {
+            midi: event.midi,
+            start: event.timestamp - record_start,
+            end: None,
+        });
         // Notes arriving within the chord window sound together — a chord,
         // not a run (both hands landing "simultaneously" spread over tens
         // of ms on real input).
@@ -292,9 +392,47 @@ impl SessionEngine {
         self.teardown_tempo_run();
         self.active_piece = None;
         self.is_free_play = false;
-        self.drill_remaining = Some(DRILL_LENGTH);
+        self.drill_active = true;
+        self.drill_cards_done = 0;
+        self.last_drill_midi = None;
+        self.drill_redo.clear();
         self.drill_totals = DrillTotals::new();
         self.next_exercise();
+    }
+
+    /// Wrap up an endless drill with one aggregated summary.
+    pub fn end_drill(&mut self) {
+        if !self.drill_active {
+            return;
+        }
+        self.drill_active = false;
+        self.drill_hint_keys = false;
+        let drill_unlock = self.unlock_earned_items();
+        let totals = std::mem::replace(&mut self.drill_totals, DrillTotals::new());
+        let mean_latency = if totals.latencies_ms.is_empty() {
+            None
+        } else {
+            Some(totals.latencies_ms.iter().sum::<f64>() / totals.latencies_ms.len() as f64)
+        };
+        let unlocked = drill_unlock.is_some();
+        self.set_phase(Phase::Summary(ExerciseSummary {
+            exercise_number: self.exercise_number,
+            note_count: totals.notes,
+            first_try_correct: totals.first_try,
+            error_count: totals.errors,
+            mean_latency_ms: mean_latency,
+            newly_unlocked: drill_unlock,
+            streak: self.streak,
+            timing: None,
+            bpm: None,
+            rhythm_unlocked: None,
+            piece_title: None,
+            worst_measure: None,
+            drill: true,
+            self_verified: self.input_source == InputSource::SelfVerify,
+        }));
+        self.schedule_auto_advance(unlocked);
+        agg_gui::animation::request_draw();
     }
 
     // --- Reference playback ("hear it") ---

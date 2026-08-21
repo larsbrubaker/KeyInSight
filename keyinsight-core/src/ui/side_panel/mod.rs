@@ -105,7 +105,7 @@ fn header(engine: &Engine, fonts: &UiFonts) -> FlexColumn {
                     "Free Play".to_string()
                 } else if let Some(piece) = engine.active_piece() {
                     piece.title.clone()
-                } else if engine.drill_remaining().is_some() {
+                } else if engine.drill_active() {
                     "Micro-drill".to_string()
                 } else {
                     format!("Exercise {}", engine.exercises_completed() + 1)
@@ -124,12 +124,8 @@ fn header(engine: &Engine, fonts: &UiFonts) -> FlexColumn {
                     "Live notation mirror".to_string()
                 } else if engine.active_piece().is_some() {
                     "Repertoire".to_string()
-                } else if let Some(remaining) = engine.drill_remaining() {
-                    format!(
-                        "Card {} of {}",
-                        crate::engine::DRILL_LENGTH - remaining + 1,
-                        crate::engine::DRILL_LENGTH
-                    )
+                } else if engine.drill_active() {
+                    format!("Card {}", engine.drill_cards_done() + 1)
                 } else {
                     "Adaptive training".to_string()
                 }
@@ -175,7 +171,7 @@ fn instruction_text(engine: &SessionEngine) -> String {
     if engine.is_free_play() {
         return "Play anything — it appears as notation. Rhythm is simplified; the staff shows your most recent notes.".to_string();
     }
-    if engine.drill_remaining().is_some() {
+    if engine.drill_active() {
         return "One note at a time, biased toward your weak spots. Hit it as quickly as you can.".to_string();
     }
     match engine.input_source() {
@@ -604,8 +600,10 @@ fn mic_cell(engine: &Engine) -> Rc<Cell<bool>> {
     engine_state_cell(engine, |e| e.input_source() == InputSource::Microphone)
 }
 
+/// The Calibrate button follows the USER's tempo choice (SidePanel.swift
+/// gates on `engine.mode`), not the content-dependent active pacing.
 fn tempo_cell(engine: &Engine) -> Rc<Cell<bool>> {
-    engine_state_cell(engine, |e| e.active_pacing() == PacingMode::Tempo)
+    engine_state_cell(engine, |e| e.mode() == PacingMode::Tempo)
 }
 
 fn training_cell(engine: &Engine) -> Rc<Cell<bool>> {

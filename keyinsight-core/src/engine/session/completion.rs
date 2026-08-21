@@ -4,8 +4,8 @@
 
 use crate::core::{NoteEvent, PitchSpelling};
 use crate::engine::session::{
-    Deferred, DrillTotals, ExerciseSummary, InputSource, PacingMode, Phase, SessionEngine,
-    AUTO_ADVANCE_DELAY, AUTO_ADVANCE_UNLOCK_DELAY,
+    Deferred, DrillRedo, ExerciseSummary, InputSource, PacingMode, Phase, SessionEngine,
+    AUTO_ADVANCE_DELAY, AUTO_ADVANCE_UNLOCK_DELAY, DRILL_REDO_DELAY_CARDS,
 };
 use crate::engine::{RhythmPolicy, TempoPolicy};
 use crate::skill::SkillModel;
@@ -30,44 +30,31 @@ impl SessionEngine {
             );
         }
 
-        // Micro-drill: accumulate and chain straight to the next card;
-        // one aggregated summary at the end.
-        if let Some(remaining) = self.drill_remaining {
+        // Micro-drill: accumulate and chain straight to the next card —
+        // endless until End Drill.
+        if self.drill_active {
             self.drill_totals.notes += self.note_count;
             self.drill_totals.first_try += self.first_try_correct;
             self.drill_totals.errors += self.errors_this_exercise;
             self.drill_totals.latencies_ms.extend(&self.latencies_ms);
-            if remaining > 1 {
-                self.drill_remaining = Some(remaining - 1);
-                self.next_exercise();
-                return;
+            self.drill_cards_done += 1;
+            // A missed note earns a retrieval rep a few cards from now.
+            if self.errors_this_exercise > 0 {
+                let card = self
+                    .exercise
+                    .as_ref()
+                    .and_then(|e| e.all_sounded_notes().first().copied());
+                if let Some(card) = card {
+                    if let Some(midi) = card.midi {
+                        self.drill_redo.push(DrillRedo {
+                            midi,
+                            staff: card.staff,
+                            due: self.drill_cards_done + DRILL_REDO_DELAY_CARDS,
+                        });
+                    }
+                }
             }
-            self.drill_remaining = None;
-            let drill_unlock = self.unlock_earned_items();
-            let totals = std::mem::replace(&mut self.drill_totals, DrillTotals::new());
-            let mean_latency = if totals.latencies_ms.is_empty() {
-                None
-            } else {
-                Some(totals.latencies_ms.iter().sum::<f64>() / totals.latencies_ms.len() as f64)
-            };
-            let unlocked = drill_unlock.is_some();
-            self.set_phase(Phase::Summary(ExerciseSummary {
-                exercise_number: self.exercise_number,
-                note_count: totals.notes,
-                first_try_correct: totals.first_try,
-                error_count: totals.errors,
-                mean_latency_ms: mean_latency,
-                newly_unlocked: drill_unlock,
-                streak: self.streak,
-                timing: None,
-                bpm: None,
-                rhythm_unlocked: None,
-                piece_title: None,
-                worst_measure: None,
-                drill: true,
-                self_verified: self.input_source == InputSource::SelfVerify,
-            }));
-            self.schedule_auto_advance(unlocked);
+            self.next_exercise();
             return;
         }
 
@@ -158,7 +145,9 @@ impl SessionEngine {
                 self.errors_this_exercise as i64,
                 self.mode.label(),
             );
-            if let Some(db) = &mut self.db {
+            // Partial replays (practice-from-here) are section practice —
+            // they don't count as plays of the piece.
+            if let (Some(db), 0) = (&mut self.db, self.start_event_index) {
                 db.record_piece_play(
                     &piece.slug,
                     &piece.title,
@@ -331,7 +320,7 @@ impl SessionEngine {
         latency_ms: Option<f64>,
     ) {
         if self.stats_suppressed
-            || index == 0
+            || index <= self.start_event_index
             || self.events[index].pitches.len() != 1
             || self.events[index - 1].pitches.len() != 1
         {

@@ -171,6 +171,19 @@ impl SessionEngine {
                 if self.storm_detector.record_wrong(event.timestamp) {
                     self.stats_suppressed = true;
                 }
+                // Drill correction: reveal the keyboard with the right key
+                // lit and name both notes — then require the right key to
+                // move on.
+                if self.drill_active {
+                    if let Some(&expected) = self.events[index].pitches.first() {
+                        self.drill_hint_keys = true;
+                        self.inspection = Some(format!(
+                            "That's {} — the card is {}",
+                            PitchSpelling::name(played),
+                            PitchSpelling::name(expected)
+                        ));
+                    }
+                }
                 // Survival's life loss hooks in here once survival lands.
             }
             SelfPacedOutcome::Ignored => {
@@ -385,7 +398,8 @@ impl SessionEngine {
             });
         } else {
             self.count_in_remaining = None;
-            self.beat_in_measure = (beat - self.count_in_beats) % exercise_beats;
+            self.beat_in_measure =
+                (beat - self.count_in_beats + self.start_beat_offset) % exercise_beats;
         }
 
         let now_ms = self.metronome.milliseconds_since_start(now) - self.input_latency_ms;
@@ -500,7 +514,7 @@ impl SessionEngine {
             return;
         }
         let events = self.events.clone();
-        for (index, event) in events.iter().enumerate() {
+        for (index, event) in events.iter().enumerate().skip(self.start_event_index) {
             for (pos, &midi) in event.pitches.iter().enumerate() {
                 self.record_attempt(midi, event.staves[pos], !nailed_it, None);
             }
@@ -510,8 +524,10 @@ impl SessionEngine {
         if nailed_it {
             {
                 let mut notation = self.notation.borrow_mut();
-                for id in &self.note_ids {
-                    notation.set_state(id, Some(NoteState::Correct));
+                for ids in self.event_ids.iter().skip(self.start_event_index) {
+                    for id in ids {
+                        notation.set_state(id, Some(NoteState::Correct));
+                    }
                 }
             }
             let first_try = self.self_verify_attempts == 0;

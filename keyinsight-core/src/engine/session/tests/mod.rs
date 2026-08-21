@@ -3,9 +3,13 @@
 //! cover the same journeys headlessly: play an adaptive exercise through
 //! the simulated backend, see feedback + summary + persistence.
 //! `hands` covers hand modes / pacing / progress; `robustness` the mastery
-//! guards, chord windows, and rhythm advancement.
+//! guards, chord windows, and rhythm advancement; `drill`, `free_play`,
+//! and `practice_from` the off-path modes.
 
+mod drill;
+mod free_play;
 mod hands;
+mod practice_from;
 mod robustness;
 
 use std::cell::RefCell;
@@ -153,28 +157,6 @@ fn free_play_mirrors_played_chords() {
 }
 
 #[test]
-fn drill_chains_cards_into_one_aggregated_summary() {
-    let (mut engine, time) = engine();
-    engine.start_drill();
-    assert_eq!(engine.drill_remaining(), Some(super::DRILL_LENGTH));
-    let mut guard = 0;
-    while *engine.phase() == Phase::Playing {
-        let expected = engine.current_expected_midi().unwrap();
-        *time.borrow_mut() += 0.4;
-        let at = *time.borrow();
-        engine.handle(note_on(expected, at));
-        guard += 1;
-        assert!(guard < 200, "drill should aggregate to a summary");
-    }
-    let Phase::Summary(summary) = engine.phase() else {
-        panic!("expected drill summary");
-    };
-    assert!(summary.drill);
-    assert_eq!(summary.note_count, super::DRILL_LENGTH as usize);
-    assert_eq!(engine.drill_remaining(), None);
-}
-
-#[test]
 fn repertoire_records_piece_plays() {
     let (mut engine, time) = engine();
     let piece = crate::score::RepertoireLibrary::bundled()
@@ -286,6 +268,25 @@ fn calibration_tap_receives_simulated_keys() {
     assert!(engine.handle_simulated_key('a', true, false));
     engine.handle_simulated_key('a', false, false);
     assert_eq!(taps.borrow().len(), 1, "note-on must reach the tap hook");
+}
+
+/// Audio stub that accepts playback and records what it was asked to
+/// play (SMF bytes and drill-card notes).
+#[derive(Default)]
+struct RecordingAudio {
+    smfs: RefCell<Vec<Vec<u8>>>,
+    notes: RefCell<Vec<(u8, f64)>>,
+}
+impl crate::audio::AudioOut for RecordingAudio {
+    fn play_click(&self, _at: f64, _accent: bool) {}
+    fn play_smf(&self, smf: &[u8]) -> bool {
+        self.smfs.borrow_mut().push(smf.to_vec());
+        true
+    }
+    fn stop_smf(&self) {}
+    fn play_note(&self, midi: u8, duration_seconds: f64) {
+        self.notes.borrow_mut().push((midi, duration_seconds));
+    }
 }
 
 /// Audio stub that accepts playback (NullAudioOut declines, which would

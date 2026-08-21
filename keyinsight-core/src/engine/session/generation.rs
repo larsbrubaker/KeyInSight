@@ -3,13 +3,19 @@
 //! configuration drawn from the skill models.
 
 use crate::core::{PitchSpelling, Rng64};
-use crate::engine::session::{HandMode, PacingMode, Phase, SessionEngine};
+use crate::engine::session::{HandMode, InputSource, PacingMode, Phase, SessionEngine};
 use crate::engine::{SelfPacedMatcher, TempoExpected, TempoMatcher};
+use crate::notation::NoteState;
 use crate::score::{
-    ChordShape, DifficultyDescriptors, Exercise, ExerciseGenerator, Hands, MusicXmlEncoder, Staff,
+    ChordShape, DifficultyDescriptors, Exercise, ExerciseGenerator, Hands, MusicXmlEncoder,
+    PitchOption, Staff,
 };
 use crate::skill::{KeyOption, SkillModel, SEED_COUNT};
 use crate::ui::KeyboardLayout;
+
+/// A drill card's auditory anchor sounds this long (the Swift
+/// `PlaybackEngine.playNote` default).
+const DRILL_CARD_NOTE_SECONDS: f64 = 0.8;
 
 impl SessionEngine {
     // --- Hand selection ---
@@ -64,6 +70,31 @@ impl SessionEngine {
         }
     }
 
+    /// The next flash card: a due retrieval rep takes priority over fresh
+    /// sampling; neither repeats the previous card's pitch.
+    fn next_drill_card(&mut self) -> Exercise {
+        let staff = self.drill_staff();
+        let due = self.drill_redo.iter().position(|redo| {
+            redo.due <= self.drill_cards_done && Some(redo.midi) != self.last_drill_midi
+        });
+        if let Some(index) = due {
+            let redo = self.drill_redo.remove(index);
+            return ExerciseGenerator::drill_note(
+                &[PitchOption::new(redo.midi)],
+                redo.staff,
+                None,
+                &mut self.rng,
+            );
+        }
+        let model = if staff == Staff::Bass {
+            &self.bass_skill
+        } else {
+            &self.skill
+        };
+        let options = model.active_pitch_options();
+        ExerciseGenerator::drill_note(&options, staff, self.last_drill_midi, &mut self.rng)
+    }
+
     pub(crate) fn pick_key(&mut self, keys: &[KeyOption]) -> i32 {
         let total: f64 = keys.iter().map(|k| k.weight).sum();
         if total <= 0.0 {
@@ -79,18 +110,24 @@ impl SessionEngine {
         0
     }
 
-    /// Target times (ms on the metronome clock) per sounded note, after the
-    /// count-in.
-    pub fn tempo_targets(&self, exercise: &Exercise) -> Vec<TempoExpected> {
+    /// Target times (ms on the metronome clock) per match event, after the
+    /// count-in. `start_event` shifts the grid so a partial replay's first
+    /// note lands right after the count-in (earlier targets go negative;
+    /// they're pre-resolved as skipped).
+    pub fn tempo_targets(&self, exercise: &Exercise, start_event: usize) -> Vec<TempoExpected> {
         let unit_ms = (60_000.0 / self.tempo_bpm) / 2.0;
         let count_in_ms = self.count_in_beats as f64 * (60_000.0 / self.tempo_bpm);
-        exercise
-            .sounded_notes()
+        let events = exercise.match_events();
+        let start_units = if start_event > 0 && start_event < events.len() {
+            events[start_event].start_units
+        } else {
+            0
+        };
+        events
             .iter()
-            .zip(exercise.sounded_note_start_units())
-            .map(|(note, start)| TempoExpected {
-                midi: note.midi.expect("sounded notes carry a pitch"),
-                target_ms: count_in_ms + start as f64 * unit_ms,
+            .map(|event| TempoExpected {
+                midi: event.pitches[0],
+                target_ms: count_in_ms + (event.start_units - start_units) as f64 * unit_ms,
             })
             .collect()
     }
@@ -155,6 +192,7 @@ impl SessionEngine {
     pub fn next_exercise(&mut self) {
         self.stop_playback();
         self.teardown_tempo_run();
+        self.drill_hint_keys = false;
         self.inspection = None;
         self.stats_suppressed = false;
         self.storm_detector.reset();
@@ -166,14 +204,10 @@ impl SessionEngine {
             replay
         } else if let Some(piece) = &self.active_piece {
             piece.exercise.clone()
-        } else if self.drill_remaining.is_some() {
-            let staff = self.drill_staff();
-            let model = if staff == Staff::Bass {
-                &self.bass_skill
-            } else {
-                &self.skill
-            };
-            ExerciseGenerator::drill_note(&model.active_pitch_options(), staff, None, &mut self.rng)
+        } else if self.drill_active {
+            let card = self.next_drill_card();
+            self.last_drill_midi = card.all_sounded_notes().first().and_then(|n| n.midi);
+            card
         } else {
             self.generate_training_exercise()
         };
@@ -192,8 +226,17 @@ impl SessionEngine {
             return;
         }
 
-        self.note_count = self.events.len();
-        self.current_note_index = 0;
+        // Practice-from-here (repertoire): events before the chosen spot
+        // are never expected — grayed out, excluded from counts and reports.
+        self.start_event_index = if self.active_piece.is_some() {
+            self.replay_start_event
+                .min(self.events.len().saturating_sub(1))
+        } else {
+            0
+        };
+
+        self.note_count = self.events.len() - self.start_event_index;
+        self.current_note_index = self.start_event_index;
         self.errors_this_exercise = 0;
         self.errors_on_current_note = 0;
         self.first_try_correct = 0;
@@ -215,7 +258,7 @@ impl SessionEngine {
         // (Survival joins this guard when it lands.)
         self.active_pacing = if self.mode == PacingMode::Tempo
             && self.content_supports_tempo
-            && self.drill_remaining.is_none()
+            && !self.drill_active
         {
             PacingMode::Tempo
         } else {
@@ -236,6 +279,16 @@ impl SessionEngine {
         ));
 
         self.notation.borrow_mut().load_score();
+        // Gray out everything before the start spot (after load_score:
+        // state flips ride on the fresh score).
+        {
+            let mut notation = self.notation.borrow_mut();
+            for ids in self.event_ids.iter().take(self.start_event_index) {
+                for id in ids {
+                    notation.set_state(id, Some(NoteState::Locked));
+                }
+            }
+        }
         // Keyboard strip: fit the content's range; context may have changed.
         let all_pitches: Vec<u8> = self.events.iter().flat_map(|e| e.pitches.clone()).collect();
         self.keyboard_layout = KeyboardLayout::covering(
@@ -246,18 +299,30 @@ impl SessionEngine {
 
         match self.active_pacing {
             PacingMode::SelfPaced => {
-                self.matcher = Some(SelfPacedMatcher::new(exercise.expected_sets()));
+                self.matcher = Some(SelfPacedMatcher::with_start_index(
+                    exercise.expected_sets(),
+                    self.start_event_index,
+                ));
                 self.tempo_matcher = None;
-                self.set_current(0);
+                self.set_current(self.start_event_index);
                 self.current_note_start = (self.clock)();
                 self.set_phase(Phase::Playing);
             }
             PacingMode::Tempo => {
                 self.matcher = None;
-                self.tempo_matcher = Some(TempoMatcher::new(self.tempo_targets(&exercise)));
+                self.tempo_matcher = Some(TempoMatcher::with_start_index(
+                    self.tempo_targets(&exercise, self.start_event_index),
+                    self.start_event_index,
+                ));
+                let start_units = self
+                    .events
+                    .get(self.start_event_index)
+                    .map(|e| e.start_units)
+                    .unwrap_or(0);
+                self.start_beat_offset = (start_units / 2) % exercise.beats_per_measure;
                 self.count_in_remaining = Some(self.count_in_beats);
                 self.beat_in_measure = 0;
-                self.set_current(0);
+                self.set_current(self.start_event_index);
                 self.set_phase(Phase::Playing);
                 let now = (self.clock)();
                 self.metronome.start(
@@ -267,6 +332,14 @@ impl SessionEngine {
                     now,
                 );
                 self.sweep_running = true;
+            }
+        }
+
+        // Drill cards sound as they appear (staff <-> sound association) —
+        // except over the mic, which would hear the app answer itself.
+        if self.drill_active && self.input_source != InputSource::Microphone {
+            if let Some(&midi) = self.events.first().and_then(|e| e.pitches.first()) {
+                self.audio.play_note(midi, DRILL_CARD_NOTE_SECONDS);
             }
         }
 
