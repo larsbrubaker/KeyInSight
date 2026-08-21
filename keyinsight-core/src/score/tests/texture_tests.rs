@@ -1,13 +1,12 @@
 //! Ports `SurvivalTextureTests` from
 //! `Tests/KeyInSightTests/GeneratorTests.swift`: the melody-hand flip and
-//! two-bar lines. `rendererHonorsEncodedBreaks` (and the
-//! `SystemLayoutProbe` / `BarlineAlignmentProbe` /
-//! `RenderOptionStabilityProbe` suites) need the renderer's per-render
-//! feed-layout flag and arrive with the notation step.
+//! two-bar lines. The `SystemLayoutProbe` / `BarlineAlignmentProbe` /
+//! `RenderOptionStabilityProbe` suites live in `notation/tests.rs`.
 
 use std::collections::HashSet;
 
 use crate::core::SplitMix64;
+use crate::notation::NotationRenderer;
 use crate::score::{
     ExerciseGenerator, Hands, MusicXmlEncoder, MusicXmlImporter, NoteDuration, PitchOption, Staff,
 };
@@ -63,4 +62,30 @@ fn encoder_emits_system_breaks_every_two_measures() {
     // The break rides inside the measure, importer-transparent.
     let piece = MusicXmlImporter::parse(broken.as_bytes(), "rt").ok();
     assert_eq!(piece.map(|p| p.exercise), Some(ex));
+}
+
+#[test]
+fn renderer_honors_encoded_breaks() {
+    let mut renderer = NotationRenderer::new();
+    let mut generator = ExerciseGenerator::default();
+    generator.config.measures = 4;
+    let mut rng = SplitMix64::new(5);
+    let pitches: Vec<PitchOption> = [60, 62, 64, 65, 67]
+        .iter()
+        .map(|&m| PitchOption::new(m))
+        .collect();
+    let ex = generator.generate(&pitches, &mut rng);
+    let xml = MusicXmlEncoder::encode_with_breaks(&ex, Some(2));
+    renderer.render_with(&xml, true).expect("feed render");
+    let systems = renderer.toolkit().current_layout().unwrap().systems.len();
+    assert_eq!(systems, 2, "expected 2 two-bar systems, got {systems}");
+    // And the sticky option resets: auto layout keeps 4 bars on one line.
+    renderer
+        .render(&MusicXmlEncoder::encode(&ex))
+        .expect("auto render");
+    let auto_systems = renderer.toolkit().current_layout().unwrap().systems.len();
+    assert_eq!(
+        auto_systems, 1,
+        "auto breaks regressed to {auto_systems} systems"
+    );
 }

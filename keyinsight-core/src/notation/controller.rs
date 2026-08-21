@@ -5,16 +5,20 @@
 //! Ports `Notation/NotationController.swift`. The WKWebView command
 //! surface (`setState`, `showGhost`, `addTick`, `followSchedule`) maps to
 //! plain state the widget reads each paint; the JS rAF follow loop maps to
-//! frame-time evaluation in [`NotationController::follow_index_at`].
+//! frame-time evaluation in [`NotationController::follow_ids_at`]; the
+//! survival follow-top slide lives in [`super::slide::SlideLane`].
 
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::notation::slide::SlideLane;
 use crate::notation::{NotationRenderer, Rendered};
 
 /// Hover callback: (kind, element id); empty strings end the hover.
 pub type InspectCallback = Box<dyn Fn(&str, &str)>;
+/// Note-click callback: the clicked note's element id.
+pub type NoteClickCallback = Box<dyn Fn(&str)>;
 
 /// Feedback / heat-map state of one note element. Colors mirror the Swift
 /// page CSS exactly.
@@ -83,7 +87,14 @@ pub struct NotationController {
     /// Called when the pointer hovers a notation element: (kind, id).
     /// Fires with empty strings when the hover ends.
     pub on_inspect: Option<InspectCallback>,
+    /// Called when a note is clicked (same padded hit boxes as hover).
+    pub on_note_click: Option<NoteClickCallback>,
     last_hover_key: RefCell<String>,
+    /// Follow-top (survival) slide state; see [`Self::set_follow_top`].
+    lane: SlideLane,
+    /// A note just went current: its system is checked for visibility on
+    /// the next paint (the page deferred `ensureVisible` to the next rAF).
+    pending_visible: Option<String>,
 }
 
 impl NotationController {
@@ -96,7 +107,10 @@ impl NotationController {
             follow: None,
             follow_log: Vec::new(),
             on_inspect: None,
+            on_note_click: None,
             last_hover_key: RefCell::new(String::new()),
+            lane: SlideLane::default(),
+            pending_visible: None,
         }
     }
 
@@ -107,12 +121,17 @@ impl NotationController {
         self.ghost = None;
         self.ticks.clear();
         self.follow = None;
+        self.lane.reset();
+        self.pending_visible = None;
         agg_gui::animation::request_draw();
     }
 
     pub fn set_state(&mut self, id: &str, state: Option<NoteState>) {
         match state {
             Some(state) => {
+                if state == NoteState::Current {
+                    self.pending_visible = Some(id.to_string());
+                }
                 self.states.insert(id.to_string(), state);
             }
             None => {
@@ -217,6 +236,83 @@ impl NotationController {
     /// Convenience used by both engine and widget.
     pub fn render(&self, music_xml: &str) -> Option<Rendered> {
         self.renderer.borrow_mut().render(music_xml)
+    }
+
+    // --- Follow-top (survival) ---
+
+    /// Follow-top scrolling (survival): whenever the cursor enters a new
+    /// system, that system slides to the top of the view — a feed, not a
+    /// page. Off = the default keep-in-upper-third behavior (which the
+    /// fit-to-view widget satisfies without scrolling; see `widget.rs`).
+    pub fn set_follow_top(&mut self, on: bool) {
+        self.lane.set_follow_top(on);
+    }
+
+    pub fn follow_top(&self) -> bool {
+        self.lane.follow_top()
+    }
+
+    /// The note whose system must be brought into view on this paint.
+    pub fn take_pending_visible(&mut self) -> Option<String> {
+        self.pending_visible.take()
+    }
+
+    /// `ensureVisible(el)` in follow-top mode: entering a new system slides
+    /// the score so that system lands where the top line lives. `scale` is
+    /// the display scale (layout → screen px); `now` the host clock.
+    pub fn ensure_visible(&mut self, id: &str, scale: f64, now: f64) {
+        let Some((system, staff_top)) = self.system_of(id) else {
+            return;
+        };
+        if self.lane.enter_system(system, staff_top * scale, now) {
+            agg_gui::animation::request_draw();
+        }
+    }
+
+    /// The system a note sits on and its top staff line's layout y: the
+    /// last system whose staff top is above the notehead, allowing ledger
+    /// room over the staff (the page walked up to the `g.system` ancestor).
+    fn system_of(&self, id: &str) -> Option<(usize, f64)> {
+        let renderer = self.renderer.borrow();
+        let layout = renderer.toolkit().current_layout()?;
+        let &(_, y_top, _, h) = layout.bounds_by_id.get(id)?;
+        let cy = y_top + h / 2.0;
+        const LEDGER_ROOM: f64 = 40.0; // four staff spaces above the top line
+        layout
+            .systems
+            .iter()
+            .rev()
+            .find(|system| system.staff_top - LEDGER_ROOM <= cy)
+            .or(layout.systems.first())
+            .map(|system| (system.index, system.staff_top))
+    }
+
+    /// The settled slide target (`slideOffset`, whole px; negative = up).
+    pub fn slide_offset(&self) -> f64 {
+        self.lane.slide_offset()
+    }
+
+    /// The slide transform on screen at `now`; keeps frames coming while
+    /// a slide is in flight and, like the page's `transitionend`, requests
+    /// one more paint when it completes so hit geometry settles.
+    pub fn slide_offset_at(&mut self, now: f64) -> f64 {
+        let offset = self.lane.offset_at(now);
+        if self.lane.finish_if_done(now) || self.lane.is_sliding() {
+            agg_gui::animation::request_draw();
+        }
+        offset
+    }
+
+    /// The slide transform on screen at `now`, read-only (hit testing).
+    pub fn slide_offset_on_screen(&self, now: f64) -> f64 {
+        self.lane.offset_at(now)
+    }
+
+    /// Click routing from the widget (repertoire: practice-from-here).
+    pub fn send_click(&self, id: &str) {
+        if let Some(on_note_click) = &self.on_note_click {
+            on_note_click(id);
+        }
     }
 }
 

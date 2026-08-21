@@ -245,6 +245,16 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
             }
         }));
     }
+    // Note click: notation → engine (repertoire: practice-from-here).
+    {
+        let engine_for_click = Rc::clone(&engine);
+        let notation = engine.borrow().notation.clone();
+        notation.borrow_mut().on_note_click = Some(Box::new(move |id| {
+            if let Ok(mut engine) = engine_for_click.try_borrow_mut() {
+                engine.note_clicked(id);
+            }
+        }));
+    }
 
     let cells = SidePanelCells::new();
 

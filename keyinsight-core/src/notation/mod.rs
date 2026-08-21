@@ -9,8 +9,12 @@
 
 mod controller;
 mod renderer;
+mod slide;
 mod vocabulary;
 mod widget;
+
+#[cfg(test)]
+mod tests;
 
 pub use controller::{NotationController, NoteState};
 pub use renderer::{NotationRenderer, Rendered};

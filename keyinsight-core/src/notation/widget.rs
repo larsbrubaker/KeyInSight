@@ -10,12 +10,33 @@ use std::sync::Arc;
 
 use agg_gui::color::Color;
 use agg_gui::draw_ctx::DrawCtx;
-use agg_gui::event::{Event, EventResult};
+use agg_gui::event::{Event, EventResult, MouseButton};
 use agg_gui::geometry::{Point, Rect, Size};
 use agg_gui::text::Font;
 use agg_gui::widget::Widget;
 
 use crate::notation::{NotationController, NoteState};
+
+/// Whole device pixels for every vertical content offset. The Swift page
+/// learned this the hard way: settling on a fractional offset knocks staff
+/// lines off the pixel grid — a 1px black line painted as 2px of gray. Its
+/// keep-in-upper-third scroll (`r.top < vh*0.05 || r.bottom > vh*0.7` →
+/// put the system's top at `vh*0.18`, rounded) has no work to do here —
+/// the widget fits the whole score to its viewport — but the rounding rule
+/// applies to the paint origin and the follow-top slide alike.
+pub fn whole_px(offset: f64) -> f64 {
+    offset.round()
+}
+
+/// Where the engraving sits in the widget: display scale, and the content
+/// origin (widget px, y-up) of the score box's bottom-left corner.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Placement {
+    scale: f64,
+    offset_x: f64,
+    origin_y: f64,
+    score_h: f64,
+}
 
 pub struct NotationWidget {
     controller: Rc<RefCell<NotationController>>,
@@ -25,9 +46,6 @@ pub struct NotationWidget {
     music_font: Arc<Font>,
     bounds: Rect,
     children: Vec<Box<dyn Widget>>,
-    /// Content scale + offset of the last paint (hover hit-testing).
-    scale: f64,
-    offset_x: f64,
 }
 
 impl NotationWidget {
@@ -38,16 +56,25 @@ impl NotationWidget {
             music_font: verovio_rust::leipzig_font(),
             bounds: Rect::new(0.0, 0.0, 0.0, 0.0),
             children: Vec::new(),
-            scale: 1.0,
-            offset_x: 0.0,
         }
     }
 
-    fn layout_size(&self) -> Option<(f64, f64)> {
+    /// Fit the engraving to the widget, centered horizontally, capped so
+    /// small exercises don't balloon; the follow-top slide (whole px, CSS
+    /// sign: negative = up) moves the whole score box.
+    fn placement(&self, slide_offset: f64) -> Option<Placement> {
         let controller = self.controller.borrow();
         let renderer = controller.renderer.borrow();
         let layout = renderer.toolkit().current_layout()?;
-        Some((layout.width, layout.height))
+        let (width, height) = (self.bounds.width, self.bounds.height);
+        let scale = renderer.display_scale(width, height)?;
+        let score_h = layout.height;
+        Some(Placement {
+            scale,
+            offset_x: (width - layout.width * scale) / 2.0,
+            origin_y: whole_px(height - score_h * scale) - slide_offset,
+            score_h,
+        })
     }
 }
 
@@ -90,29 +117,42 @@ impl Widget for NotationWidget {
         ctx.rect(0.0, 0.0, width, height);
         ctx.fill();
 
-        let Some((score_w, score_h)) = self.layout_size() else {
-            return;
-        };
-        // Fit the engraving to the widget, centered horizontally, capped so
-        // small exercises don't balloon.
-        let scale = (width / score_w).min(height / score_h).min(1.6);
-        self.scale = scale;
-        self.offset_x = (width - score_w * scale) / 2.0;
-
-        ctx.save();
-        ctx.translate(self.offset_x, height - score_h * scale);
-        ctx.scale(scale, scale);
-
+        let now = (self.now)();
         // Follow overlay: while playback-following, the scheduled group
-        // paints as current on top of the stored states.
-        let follow_ids = {
+        // paints as current on top of the stored states. Then the
+        // follow-top lane: a note that just went current may slide its
+        // system to the top.
+        let pending = self.controller.borrow_mut().take_pending_visible();
+        if let (Some(id), Some(placement)) = (pending, self.placement(0.0)) {
+            self.controller
+                .borrow_mut()
+                .ensure_visible(&id, placement.scale, now);
+        }
+        let (follow_ids, slide_offset) = {
             let mut controller = self.controller.borrow_mut();
-            let now = (self.now)();
-            controller.follow_ids_at(now)
+            (
+                controller.follow_ids_at(now),
+                controller.slide_offset_at(now),
+            )
         };
         if self.controller.borrow().is_following() {
             agg_gui::animation::request_draw(); // keep the cursor moving
         }
+        let Some(Placement {
+            scale,
+            offset_x,
+            origin_y,
+            score_h,
+        }) = self.placement(slide_offset)
+        else {
+            return;
+        };
+
+        ctx.save();
+        // A slid score leaves the widget through its top edge.
+        ctx.clip_rect(0.0, 0.0, width, height);
+        ctx.translate(offset_x, origin_y);
+        ctx.scale(scale, scale);
 
         let controller = self.controller.borrow();
         let renderer = controller.renderer.borrow();
@@ -192,8 +232,18 @@ impl Widget for NotationWidget {
     }
 
     fn on_event(&mut self, event: &Event) -> EventResult {
-        if let Event::MouseMove { pos } = event {
-            self.route_hover(*pos);
+        match event {
+            Event::MouseMove { pos } => self.route_hover(*pos),
+            Event::MouseDown {
+                pos,
+                button: MouseButton::Left,
+                ..
+            } => {
+                if self.route_click(*pos) {
+                    return EventResult::Consumed;
+                }
+            }
+            _ => {}
         }
         EventResult::Ignored
     }
@@ -204,21 +254,21 @@ impl Widget for NotationWidget {
 }
 
 impl NotationWidget {
-    /// Hover-to-name: padded notehead hit boxes, nearest center wins (ports
-    /// the Swift page's `noteHitAt`; the precise per-kind fallback arrives
-    /// with non-note element hovers).
-    fn route_hover(&self, pos: Point) {
+    /// Padded notehead hit boxes, nearest center wins (ports the Swift
+    /// page's `noteHitAt`). Hit geometry follows the slide transform, like
+    /// the page rebuilding its rects at `transitionend`.
+    fn note_hit_at(&self, pos: Point) -> Option<String> {
+        let slide_offset = self
+            .controller
+            .borrow()
+            .slide_offset_on_screen((self.now)());
+        let placement = self.placement(slide_offset)?;
         let controller = self.controller.borrow();
         let renderer = controller.renderer.borrow();
-        let Some(layout) = renderer.toolkit().current_layout() else {
-            return;
-        };
-        let Some((_, score_h)) = self.layout_size() else {
-            return;
-        };
+        let layout = renderer.toolkit().current_layout()?;
         // Widget y-up → layout y-down.
-        let lx = (pos.x - self.offset_x) / self.scale;
-        let ly = score_h - (pos.y - (self.bounds.height - score_h * self.scale)) / self.scale;
+        let lx = (pos.x - placement.offset_x) / placement.scale;
+        let ly = placement.score_h - (pos.y - placement.origin_y) / placement.scale;
         const HIT_PAD: f64 = 10.0;
         let mut best: Option<(String, f64)> = None;
         for (id, &(x, y_top, w, h)) in &layout.bounds_by_id {
@@ -236,13 +286,94 @@ impl NotationWidget {
                 best = Some((id.clone(), d));
             }
         }
-        drop(renderer);
-        match best {
-            Some((id, _)) => {
-                let kind = if id.starts_with("rest-") { "rest" } else { "note" };
+        best.map(|(id, _)| id)
+    }
+
+    /// Hover-to-name (the precise per-kind fallback arrives with non-note
+    /// element hovers).
+    fn route_hover(&self, pos: Point) {
+        let hit = self.note_hit_at(pos);
+        let controller = self.controller.borrow();
+        match hit {
+            Some(id) => {
+                let kind = if id.starts_with("rest-") {
+                    "rest"
+                } else {
+                    "note"
+                };
                 controller.send_hover(kind, &id)
             }
             None => controller.send_hover("", ""),
         }
+    }
+
+    /// Clicking a note reports it (repertoire: practice-from-here) — the
+    /// same padded hit boxes as hover. True when a note was hit.
+    fn route_click(&self, pos: Point) -> bool {
+        let Some(id) = self.note_hit_at(pos) else {
+            return false;
+        };
+        self.controller.borrow().send_click(&id);
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::SplitMix64;
+    use crate::score::{ExerciseGenerator, MusicXmlEncoder, PitchOption};
+    use agg_gui::event::Modifiers;
+
+    #[test]
+    fn route_click_reports_the_padded_note_under_the_pointer() {
+        let renderer = Rc::new(RefCell::new(crate::notation::NotationRenderer::new()));
+        let mut generator = ExerciseGenerator::default();
+        generator.config.measures = 2;
+        let mut rng = SplitMix64::new(4);
+        let pitches: Vec<PitchOption> = [60, 62, 64, 65, 67]
+            .iter()
+            .map(|&m| PitchOption::new(m))
+            .collect();
+        let ex = generator.generate(&pitches, &mut rng);
+        let rendered = renderer
+            .borrow_mut()
+            .render(&MusicXmlEncoder::encode(&ex))
+            .expect("render");
+        let target = rendered.note_ids[1].clone();
+
+        let controller = Rc::new(RefCell::new(NotationController::new(Rc::clone(&renderer))));
+        let clicked: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+        let sink = Rc::clone(&clicked);
+        controller.borrow_mut().on_note_click =
+            Some(Box::new(move |id| sink.borrow_mut().push(id.to_string())));
+
+        let mut widget = NotationWidget::new(controller, Rc::new(|| 0.0));
+        widget.set_bounds(Rect::new(0.0, 0.0, 700.0, 300.0));
+        let placement = widget.placement(0.0).expect("placement");
+        let (x, y_top, w, h) = renderer.borrow().toolkit().element_bounds(&target).unwrap();
+        // Layout y-down → widget y-up, just inside the padded box.
+        let sx = placement.offset_x + (x + w / 2.0) * placement.scale + 4.0;
+        let sy = placement.origin_y + (placement.score_h - (y_top + h / 2.0)) * placement.scale;
+        let click = |widget: &mut NotationWidget, pos: Point| {
+            widget.on_event(&Event::MouseDown {
+                pos,
+                button: MouseButton::Left,
+                modifiers: Modifiers::default(),
+            })
+        };
+        assert!(matches!(
+            click(&mut widget, Point::new(sx, sy)),
+            EventResult::Consumed
+        ));
+        assert_eq!(*clicked.borrow(), vec![target.clone()]);
+        // Empty page: nothing reported, event left to bubble.
+        assert!(matches!(
+            click(&mut widget, Point::new(2.0, 2.0)),
+            EventResult::Ignored
+        ));
+        assert_eq!(clicked.borrow().len(), 1);
+        // Hover uses the same boxes.
+        widget.route_hover(Point::new(sx, sy));
     }
 }
