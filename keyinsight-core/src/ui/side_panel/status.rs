@@ -1,14 +1,25 @@
-//! The side panel's status block — `statusSection`, `tempoStatus`, and
-//! `summarySection` from `UI/SidePanel.swift` as [`InfoRow`] builders,
-//! preserving every color, icon, and font treatment.
+//! The side panel's status block — `statusSection` and `tempoStatus`
+//! from `UI/SidePanel.swift` as [`InfoRow`] builders, preserving every
+//! color, icon, and font treatment. The summary branch lives in
+//! `summary.rs`.
 
-use crate::engine::{ExerciseSummary, InputSource, PacingMode, Phase, SessionEngine};
-use crate::ui::fonts::{icon, size};
+use std::rc::Rc;
+
+use crate::engine::{InputSource, PacingMode, Phase, SessionEngine, SurvivalPolicy};
+use crate::ui::fonts::{icon, size, UiFonts};
 use crate::ui::palette;
-use crate::ui::{InfoRow, RowStyle};
+use crate::ui::{InfoRow, InfoRows, RowStyle};
+
+use super::summary::summary_rows;
+use super::Engine;
+
+pub(super) fn status_section(engine: &Engine, fonts: &UiFonts) -> InfoRows {
+    let engine = Rc::clone(engine);
+    InfoRows::new(fonts, move || status_rows(&engine.borrow()))
+}
 
 /// Build the rows for the current engine phase.
-pub fn status_rows(engine: &SessionEngine) -> Vec<InfoRow> {
+pub(super) fn status_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     match engine.phase() {
         Phase::Loading => vec![InfoRow::text("Preparing…", size::BODY).with_dim()],
         Phase::Playing if engine.is_free_play() => {
@@ -25,12 +36,72 @@ pub fn status_rows(engine: &SessionEngine) -> Vec<InfoRow> {
             }
             rows
         }
+        Phase::Playing if engine.is_survival() => survival_rows(engine),
+        Phase::Playing
+            if engine.drill_active() && engine.input_source() != InputSource::SelfVerify =>
+        {
+            drill_rows(engine)
+        }
         Phase::Playing => playing_rows(engine),
         Phase::Summary(summary) => summary_rows(summary),
         Phase::Failed(message) => vec![InfoRow::text(message.clone(), size::BODY)
             .with_icon(icon::WARNING)
             .with_color(palette::RED)],
     }
+}
+
+/// `.playing where isSurvival`: the lives row, the note count, and the
+/// streak once it reaches 5.
+fn survival_rows(engine: &SessionEngine) -> Vec<InfoRow> {
+    let hearts = (0..SurvivalPolicy::START_LIVES)
+        .map(|i| {
+            if i < engine.survival_lives() {
+                (icon::HEART, Some(palette::RED))
+            } else {
+                (icon::HEART_OUTLINE, None)
+            }
+        })
+        .collect();
+    let mut rows = vec![
+        InfoRow::glyph_run(hearts, size::BODY),
+        InfoRow::text(format!("{} notes", engine.survival_notes()), size::BODY)
+            .with_style(RowStyle::Mono),
+    ];
+    if engine.streak() >= 5 {
+        rows.push(
+            InfoRow::text(format!("{} streak", engine.streak()), size::BODY)
+                .with_icon(icon::FLAME)
+                .with_style(RowStyle::Mono)
+                .with_color(palette::ORANGE),
+        );
+    }
+    rows
+}
+
+/// `.playing where drillActive` (detected input): card number, the streak
+/// at any length (orange from 5), and the lit-key hint after a miss.
+fn drill_rows(engine: &SessionEngine) -> Vec<InfoRow> {
+    let streak = InfoRow::text(format!("{} streak", engine.streak()), size::BODY)
+        .with_icon(icon::FLAME)
+        .with_style(RowStyle::Mono);
+    let streak = if engine.streak() >= 5 {
+        streak.with_color(palette::ORANGE)
+    } else {
+        streak.with_dim()
+    };
+    let mut rows = vec![
+        InfoRow::text(format!("Card {}", engine.drill_cards_done() + 1), size::BODY)
+            .with_style(RowStyle::Mono),
+        streak,
+    ];
+    if engine.drill_hint_keys() {
+        rows.push(
+            InfoRow::text("Find the lit key below", size::CALLOUT)
+                .with_icon(icon::KEYBOARD)
+                .with_color(palette::BLUE),
+        );
+    }
+    rows
 }
 
 fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
@@ -48,7 +119,7 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
             InfoRow::text(
                 format!(
                     "Note {} of {}",
-                    engine.current_note_index() + 1,
+                    engine.current_note_number(),
                     engine.note_count()
                 ),
                 size::BODY,
@@ -89,6 +160,15 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
                 .with_color(palette::ORANGE),
         );
     }
+    // help "A burst of wrong notes looks like mashing, not practice —
+    // stats resume with the next clean note."
+    if engine.stats_suppressed() {
+        rows.push(
+            InfoRow::text("Noisy input — progress tracking paused", size::CALLOUT)
+                .with_icon(icon::PAUSE_CIRCLE)
+                .with_dim(),
+        );
+    }
     if engine.active_pacing() == PacingMode::Tempo {
         let bpm = format!("{} BPM", engine.tempo_bpm() as i64);
         if let Some(count_in) = engine.count_in_remaining() {
@@ -110,100 +190,46 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     rows
 }
 
-fn summary_rows(summary: &ExerciseSummary) -> Vec<InfoRow> {
-    let mut rows = Vec::new();
-    if summary.drill {
-        rows.push(InfoRow::text("Micro-drill complete", size::BODY).with_style(RowStyle::Bold));
-    } else if summary.self_verified {
-        rows.push(
-            InfoRow::text("Self-verified", size::BODY)
-                .with_icon(icon::CHECK_CIRCLE)
-                .with_style(RowStyle::Bold),
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::side_panel::test_engine;
+
+    #[test]
+    fn survival_status_shows_lives_hearts_and_note_count() {
+        let mut engine = test_engine();
+        engine.enter_survival();
+        let rows = status_rows(&engine);
+        let hearts = rows[0].glyphs.as_ref().expect("hearts glyph run");
+        assert_eq!(hearts.len(), SurvivalPolicy::START_LIVES as usize);
+        assert!(hearts.iter().all(|(glyph, color)| {
+            *glyph == icon::HEART && *color == Some(palette::RED)
+        }));
+        assert_eq!(rows[1].text, "0 notes");
+        assert_eq!(rows.len(), 2, "no streak row below 5");
+    }
+
+    #[test]
+    fn drill_status_shows_card_and_streak_at_any_length() {
+        let mut engine = test_engine();
+        engine.set_input_source(InputSource::Keyboard);
+        engine.start_drill();
+        let rows = status_rows(&engine);
+        assert_eq!(rows[0].text, "Card 1");
+        assert_eq!(rows[1].text, "0 streak");
+        assert_eq!(rows[1].icon, Some(icon::FLAME));
+        assert!(rows[1].dim && rows[1].color.is_none(), "secondary below 5");
+        assert_eq!(rows.len(), 2, "no lit-key hint without a miss");
+    }
+
+    #[test]
+    fn training_status_counts_from_the_current_note_number() {
+        let mut engine = test_engine();
+        engine.set_input_source(InputSource::Keyboard);
+        let rows = status_rows(&engine);
+        assert_eq!(
+            rows[0].text,
+            format!("Note 1 of {}", engine.note_count())
         );
     }
-    if let Some(timing) = &summary.timing {
-        rows.push(
-            InfoRow::text(
-                format!("{}% in the window", (timing.hit_rate() * 100.0).round() as i64),
-                size::BODY,
-            )
-            .with_icon(icon::METRONOME)
-            .with_style(RowStyle::Bold),
-        );
-        rows.push(
-            InfoRow::text(
-                format!(
-                    "{} on time · {} early · {} late · {} missed",
-                    timing.on_time, timing.early, timing.late, timing.missed
-                ),
-                size::CALLOUT,
-            )
-            .with_dim(),
-        );
-        if let Some(offset) = timing.mean_abs_offset_ms {
-            rows.push(
-                InfoRow::text(format!("±{offset:.0} ms mean offset"), size::CALLOUT).with_dim(),
-            );
-        }
-    } else {
-        rows.push(
-            InfoRow::text(
-                format!("{}% first try", summary.accuracy_percent()),
-                size::BODY,
-            )
-            .with_icon(icon::TARGET)
-            .with_style(RowStyle::Bold),
-        );
-        rows.push(
-            InfoRow::text(
-                format!("{} of {} notes", summary.first_try_correct, summary.note_count),
-                size::CALLOUT,
-            )
-            .with_dim(),
-        );
-        if let Some(latency) = summary.mean_latency_ms {
-            rows.push(
-                InfoRow::text(format!("{:.1} s per note", latency / 1000.0), size::CALLOUT)
-                    .with_dim(),
-            );
-        }
-    }
-    if summary.error_count > 0 {
-        let text = if summary.self_verified {
-            format!(
-                "{} repeated {}",
-                summary.error_count,
-                if summary.error_count == 1 { "pass" } else { "passes" }
-            )
-        } else {
-            format!("{} wrong notes", summary.error_count)
-        };
-        rows.push(InfoRow::text(text, size::CALLOUT).with_color(palette::RED));
-    }
-    if let Some((number, errors)) = summary.worst_measure {
-        rows.push(
-            InfoRow::text(
-                format!("Measure {number} is your trouble spot ({errors})"),
-                size::CALLOUT,
-            )
-            .with_color(palette::ORANGE),
-        );
-    }
-    if let Some(unlocked) = &summary.newly_unlocked {
-        rows.push(
-            InfoRow::text(format!("{unlocked} unlocked!"), size::BODY)
-                .with_icon(icon::LOCK_OPEN)
-                .with_style(RowStyle::Bold)
-                .with_color(palette::BLUE),
-        );
-    }
-    if let Some(rhythm) = &summary.rhythm_unlocked {
-        rows.push(
-            InfoRow::text(format!("New rhythm: {rhythm}!"), size::BODY)
-                .with_icon(icon::MUSIC)
-                .with_style(RowStyle::Bold)
-                .with_color(palette::BLUE),
-        );
-    }
-    rows
 }

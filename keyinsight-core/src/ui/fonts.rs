@@ -102,6 +102,20 @@ pub mod icon {
     pub const BOOKS: char = '\u{f02d}';
     /// `bolt`
     pub const BOLT: char = '\u{f0e7}';
+    /// `arrow.right.to.line` (FA sign-in: an arrow running into a bar)
+    pub const ARROW_RIGHT_TO_LINE: char = '\u{f090}';
+    /// `xmark.circle.fill`
+    pub const XMARK_CIRCLE: char = '\u{f057}';
+    /// `heart.fill` — a remaining survival life
+    pub const HEART: char = '\u{f004}';
+    /// `heart` (outline) — a spent survival life
+    pub const HEART_OUTLINE: char = '\u{f08a}';
+    /// `pause.circle`
+    pub const PAUSE_CIRCLE: char = '\u{f28b}';
+    /// `flag.checkered`
+    pub const FLAG_CHECKERED: char = '\u{f11e}';
+    /// `trophy.fill`
+    pub const TROPHY: char = '\u{f091}';
 }
 
 #[cfg(test)]
@@ -134,6 +148,13 @@ mod tests {
             ("MUSIC", icon::MUSIC),
             ("BOOKS", icon::BOOKS),
             ("BOLT", icon::BOLT),
+            ("ARROW_RIGHT_TO_LINE", icon::ARROW_RIGHT_TO_LINE),
+            ("XMARK_CIRCLE", icon::XMARK_CIRCLE),
+            ("HEART", icon::HEART),
+            ("HEART_OUTLINE", icon::HEART_OUTLINE),
+            ("PAUSE_CIRCLE", icon::PAUSE_CIRCLE),
+            ("FLAG_CHECKERED", icon::FLAG_CHECKERED),
+            ("TROPHY", icon::TROPHY),
         ] {
             assert!(
                 fonts.icons.glyph_visual_bounds(glyph, 16.0).is_some(),

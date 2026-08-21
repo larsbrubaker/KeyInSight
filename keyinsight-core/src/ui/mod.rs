@@ -16,6 +16,7 @@ pub(crate) mod palette;
 mod piano_strip;
 pub(crate) mod sheets;
 pub(crate) mod side_panel;
+mod toggle_row;
 
 pub use app::{build_keyinsight_app, KeyInSightHandles, KeyInSightPlatform};
 pub use dynamic_label::DynamicLabel;
@@ -24,6 +25,7 @@ pub use info_rows::{InfoRow, InfoRows, RowStyle};
 pub use keyboard_layout::{KeyboardKey, KeyboardLayout};
 pub use level_meter::LevelMeter;
 pub use piano_strip::PianoStripWidget;
+pub use toggle_row::toggle_row;
 
 /// A flexible spacer for `FlexRow`s (the SwiftUI `Spacer()` in an
 /// `HStack`). A plain [`Spacer`](agg_gui::widgets::Spacer) claims all the

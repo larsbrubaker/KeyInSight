@@ -22,9 +22,12 @@ const ROW_GAP: f64 = 5.0;
 /// Icon column: glyph size relative to the row's font size.
 const ICON_SCALE: f64 = 0.85;
 const ICON_GAP: f64 = 5.0;
+/// Gap between the glyphs of a [`InfoRow::glyph_run`] row (the Swift
+/// `HStack(spacing: 3)`).
+const GLYPH_GAP: f64 = 3.0;
 
 /// Text treatment for a row (SwiftUI font modifiers).
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RowStyle {
     /// `.body` / `.callout` regular text.
     Regular,
@@ -49,6 +52,9 @@ pub struct InfoRow {
     /// Paint the tempo beat dots instead of text: `Some((beat, count))`
     /// fills dot `beat` with the accent blue, the rest gray.
     pub dots: Option<(usize, usize)>,
+    /// A run of icon glyphs, each in its own color (`None` = theme
+    /// secondary), instead of text (the survival hearts `HStack(spacing: 3)`).
+    pub glyphs: Option<Vec<(char, Option<Color>)>>,
 }
 
 impl InfoRow {
@@ -61,6 +67,7 @@ impl InfoRow {
             style: RowStyle::Regular,
             size,
             dots: None,
+            glyphs: None,
         }
     }
 
@@ -95,6 +102,22 @@ impl InfoRow {
             style: RowStyle::Mono,
             size,
             dots: Some((beat, count)),
+            glyphs: None,
+        }
+    }
+
+    /// A row of repeated icon glyphs, each painted in its own color —
+    /// the survival lives row (`heart.fill` red / `heart` secondary).
+    pub fn glyph_run(glyphs: Vec<(char, Option<Color>)>, size: f64) -> Self {
+        Self {
+            icon: None,
+            text: String::new(),
+            color: None,
+            dim: false,
+            style: RowStyle::Regular,
+            size,
+            dots: None,
+            glyphs: Some(glyphs),
         }
     }
 
@@ -196,6 +219,11 @@ impl Widget for InfoRows {
             let dot_r = 4.5;
             let lead = if let Some((_, count)) = row.dots {
                 count as f64 * (dot_r * 2.0 + 5.0) + 3.0
+            } else if let Some(glyphs) = &row.glyphs {
+                glyphs
+                    .iter()
+                    .map(|(glyph, _)| icon_width(ctx, &self.fonts, *glyph, row.size) + GLYPH_GAP)
+                    .sum()
             } else if let Some(icon) = row.icon {
                 icon_width(ctx, &self.fonts, icon, row.size) + ICON_GAP
             } else {
@@ -223,6 +251,24 @@ impl Widget for InfoRows {
                     x += dot_r * 2.0 + 5.0;
                 }
                 x += 3.0;
+            } else if let Some(glyphs) = &row.glyphs {
+                // The Swift `HStack(spacing: 3)` of heart symbols.
+                for (glyph, glyph_color) in glyphs {
+                    let width = icon_width(ctx, &self.fonts, *glyph, row.size);
+                    ctx.set_font(Arc::clone(&self.fonts.icons));
+                    ctx.set_font_size(row.size * ICON_SCALE);
+                    ctx.set_fill_color(glyph_color.unwrap_or(visuals.text_dim));
+                    let ty = match self
+                        .fonts
+                        .icons
+                        .glyph_visual_bounds(*glyph, row.size * ICON_SCALE)
+                    {
+                        Some((y_min, y_max)) => baseline_center - (y_min + y_max) / 2.0,
+                        None => baseline_center,
+                    };
+                    ctx.fill_text(&glyph.to_string(), x, ty);
+                    x += width + GLYPH_GAP;
+                }
             } else if let Some(icon) = row.icon {
                 ctx.set_font(Arc::clone(&self.fonts.icons));
                 ctx.set_font_size(row.size * ICON_SCALE);

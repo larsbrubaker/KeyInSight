@@ -268,8 +268,11 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
             // corner; pointer events outside it fall through to the score.
             .add_aligned(Box::new(inspection_overlay(&engine, &fonts)))
     };
+    // Drill correction can reveal it after a wrong strike.
     let keys_divider = Conditional::new(
-        side_panel::engine_state_cell(&engine, |e| e.show_keys() && !e.is_free_play()),
+        side_panel::engine_state_cell(&engine, |e| {
+            (e.show_keys() || e.drill_hint_keys()) && !e.is_free_play()
+        }),
         Box::new(Separator::horizontal().with_line_inset(0.0)),
     );
     let center = FlexColumn::new()

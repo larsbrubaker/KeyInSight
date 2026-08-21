@@ -66,13 +66,14 @@ impl Widget for PianoStripWidget {
         // Zero-height when hidden (the Swift view was conditionally in the
         // tree; agg-gui keeps the widget and collapses it).
         let engine = self.engine.borrow();
-        let visible = engine.show_keys() && !engine.is_free_play();
+        // Drill correction can reveal it after a wrong strike.
+        let visible = (engine.show_keys() || engine.drill_hint_keys()) && !engine.is_free_play();
         Size::new(available.width, if visible { Self::HEIGHT } else { 0.0 })
     }
 
     fn paint(&mut self, ctx: &mut dyn DrawCtx) {
         let engine = self.engine.borrow();
-        if !engine.show_keys() || engine.is_free_play() {
+        if !(engine.show_keys() || engine.drill_hint_keys()) || engine.is_free_play() {
             return;
         }
         let width = self.bounds.width;
