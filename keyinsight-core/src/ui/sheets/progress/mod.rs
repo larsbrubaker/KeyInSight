@@ -22,7 +22,7 @@ use agg_gui::widgets::{
     Button, FlexColumn, FlexRow, Label, ModalSheet, Rebuilder, ScrollView, Separator, SizedBox,
 };
 
-use crate::notation::{NotationController, NotationRenderer, NotationWidget};
+use crate::notation::{NotationController, NotationFit, NotationRenderer, NotationWidget};
 use crate::score::Staff;
 use crate::ui::fonts::{size, UiFonts};
 use crate::ui::palette;
@@ -151,12 +151,14 @@ fn build_content(
         column = column.add(Box::new(header));
     }
 
-    // The heat-map staves (white page, fixed height), treble over bass.
+    // The heat-map staves (white page, fixed height), treble over bass —
+    // the one place the Swift controller was `scrollable: true`: the
+    // multi-system staff scrolls inside its fixed height.
     for controller in [treble_controller, bass_controller] {
         column = column.add(Box::new(
-            SizedBox::new()
-                .with_height(STAFF_HEIGHT)
-                .with_child(Box::new(NotationWidget::new(controller, Rc::clone(clock)))),
+            SizedBox::new().with_height(STAFF_HEIGHT).with_child(Box::new(
+                NotationWidget::new(controller, Rc::clone(clock)).with_fit(NotationFit::Page),
+            )),
         ));
     }
     column = column.add(Box::new(Separator::horizontal().with_line_inset(0.0)));

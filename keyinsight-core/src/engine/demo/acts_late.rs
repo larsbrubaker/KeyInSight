@@ -217,6 +217,11 @@ impl DemoDriver<'_> {
                 self.engine.exercise_info().unwrap_or("no info")
             )));
         }
+        // Survival diverts the session (the side panel's training controls
+        // step aside until the run ends).
+        if !self.engine.is_diverted() {
+            return Err(self.fail("survival didn't divert the session"));
+        }
         self.say(format!(
             "demo: survival started — {} notes in chunk 1, {}",
             self.engine.note_count(),

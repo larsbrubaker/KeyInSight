@@ -14,12 +14,14 @@ mod vocabulary;
 mod widget;
 
 #[cfg(test)]
+mod scroll_tests;
+#[cfg(test)]
 mod tests;
 
 pub use controller::{NotationController, NoteState};
-pub use renderer::{NotationRenderer, Rendered};
+pub use renderer::{NotationRenderer, Rendered, READING_STAFF_PX};
 pub use vocabulary::NotationVocabulary;
-pub use widget::NotationWidget;
+pub use widget::{NotationFit, NotationWidget};
 
 #[cfg(test)]
 mod wrap_tests {

@@ -209,10 +209,9 @@ fn main() {
     }
 
     demo_wgpu::native_shell::run(
-        demo_wgpu::NativeShellConfig {
-            title: "KeyInSight",
-            logical_size: (1180.0, 640.0),
-        },
+        // The Swift TrainingView's minWidth 1180 / minHeight 520.
+        demo_wgpu::NativeShellConfig::new("KeyInSight", (1180.0, 640.0))
+            .with_min_size(1180.0, 520.0),
         app,
         // Advance the engine every painted frame (input queue, deferred
         // actions, metronome sweep).

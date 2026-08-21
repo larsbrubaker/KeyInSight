@@ -17,11 +17,33 @@ pub struct Rendered {
     pub note_groups: Vec<(f64, Vec<String>)>,
 }
 
+/// The staff height (five lines, layout px) a page reads at on screen:
+/// the Swift page showed its 1400-unit score at `width: 100%`, which put
+/// a staff at about 40 px in the training view, and the engraving's own
+/// unit (staff space 10 → staff 40) matches it at display scale 1.
+pub const READING_STAFF_PX: f64 = 40.0;
+
+/// How the current engraving is fitted to its widget.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FitTarget {
+    /// Fit the whole score into `(w, h)` at a uniform scale (whole px).
+    View(f64, f64),
+    /// Page: wrap systems at `view_w` (whole px) for a fixed display
+    /// `scale`; the score grows downward and the widget scrolls it.
+    Page { view_w: f64, scale: f64 },
+    /// Fit into `(w, h)`, falling back to a page at `scale` when the
+    /// fitted score would read smaller than that.
+    Auto { w: f64, h: f64, scale: f64 },
+}
+
 pub struct NotationRenderer {
     toolkit: Toolkit,
     layout_options: LayoutOptions,
-    /// The widget viewport the engraving is fitted to (whole px).
-    view: Option<(f64, f64)>,
+    /// The widget fit the engraving is laid out for.
+    fit: Option<FitTarget>,
+    /// Some(scale) when the current layout is a page (wrapped at the
+    /// widget width for a fixed reading scale) rather than a fitted view.
+    page_scale: Option<f64>,
     /// The layout mode of the current engraving (see [`Self::render_with`]).
     feed: bool,
 }
@@ -37,7 +59,8 @@ impl NotationRenderer {
         Self {
             toolkit: Toolkit::new(),
             layout_options: LayoutOptions::default(),
-            view: None,
+            fit: None,
+            page_scale: None,
             feed: false,
         }
     }
@@ -130,12 +153,60 @@ impl NotationRenderer {
     /// fitted (uniform) scale reads largest. Re-runs when the viewport
     /// changes and after each new score engraves.
     pub fn fit_view(&mut self, view_w: f64, view_h: f64) {
-        let view = (view_w.round().max(1.0), view_h.round().max(1.0));
-        if self.view == Some(view) {
+        let fit = FitTarget::View(view_w.round().max(1.0), view_h.round().max(1.0));
+        if self.fit == Some(fit) {
             return;
         }
-        self.view = Some(view);
+        self.fit = Some(fit);
         self.apply_fit();
+    }
+
+    /// Page layout: wrap systems at the widget width for a fixed reading
+    /// scale — a staff `target_staff_px` tall on screen — so a long score
+    /// flows down a scrollable page instead of shrinking to fit. Returns
+    /// the display scale the widget paints at. Re-runs after each new
+    /// score engraves, like [`Self::fit_view`].
+    pub fn fit_page(&mut self, view_w: f64, target_staff_px: f64) -> f64 {
+        let scale = self.reading_scale(target_staff_px);
+        let fit = FitTarget::Page {
+            view_w: view_w.round().max(1.0),
+            scale,
+        };
+        if self.fit != Some(fit) {
+            self.fit = Some(fit);
+            self.apply_fit();
+        }
+        scale
+    }
+
+    /// Training: fit the score to the viewport like [`Self::fit_view`],
+    /// but when the fitted scale would read smaller than a staff
+    /// `target_staff_px` tall, lay it out as a page at that reading scale
+    /// instead (see [`Self::page_scale`]). Short exercises fit; long
+    /// pieces scroll.
+    pub fn fit_auto(&mut self, view_w: f64, view_h: f64, target_staff_px: f64) {
+        let fit = FitTarget::Auto {
+            w: view_w.round().max(1.0),
+            h: view_h.round().max(1.0),
+            scale: self.reading_scale(target_staff_px),
+        };
+        if self.fit == Some(fit) {
+            return;
+        }
+        self.fit = Some(fit);
+        self.apply_fit();
+    }
+
+    /// The display scale at which a staff is `target_staff_px` tall.
+    pub fn reading_scale(&self, target_staff_px: f64) -> f64 {
+        (target_staff_px / (4.0 * self.layout_options.staff_space)).max(0.05)
+    }
+
+    /// Some(display scale) while the current layout is a page — laid out
+    /// by [`Self::fit_page`], or by [`Self::fit_auto`] falling back — so
+    /// the widget paints at that scale and scrolls; `None` = fitted view.
+    pub fn page_scale(&self) -> Option<f64> {
+        self.page_scale
     }
 
     /// The uniform display scale that fits the current engraving into
@@ -147,12 +218,20 @@ impl NotationRenderer {
     }
 
     fn apply_fit(&mut self) {
-        let Some((view_w, view_h)) = self.view else {
+        let Some(fit) = self.fit else {
             return;
         };
         if self.toolkit.current_layout().is_none() {
             return;
         }
+        self.page_scale = None;
+        let (view_w, view_h) = match fit {
+            FitTarget::View(w, h) | FitTarget::Auto { w, h, .. } => (w, h),
+            FitTarget::Page { view_w, scale } => {
+                self.layout_page(view_w, scale);
+                return;
+            }
+        };
         if self.feed {
             // The encoder owns the breaks; the lane is simply the widget
             // width (layout units are view px at scale 1), and only the
@@ -175,5 +254,20 @@ impl NotationRenderer {
         }
         self.layout_options.system_width = best.1;
         self.toolkit.layout(&self.layout_options);
+        if let FitTarget::Auto { scale, .. } = fit {
+            // Too small to read fitted: page it at the reading scale.
+            if best.0 < scale {
+                self.layout_page(view_w, scale);
+            }
+        }
+    }
+
+    /// Page layout: one wrap width — the widget width in layout px at the
+    /// reading scale (whole px, so sub-pixel resize noise doesn't churn
+    /// the layout).
+    fn layout_page(&mut self, view_w: f64, scale: f64) {
+        self.layout_options.system_width = Some((view_w / scale).round().max(200.0));
+        self.toolkit.layout(&self.layout_options);
+        self.page_scale = Some(scale);
     }
 }

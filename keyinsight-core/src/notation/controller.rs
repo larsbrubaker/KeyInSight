@@ -97,6 +97,22 @@ pub struct NotationController {
     /// A note just went current: its system is checked for visibility on
     /// the next paint (the page deferred `ensureVisible` to the next rAF).
     pending_visible: Option<String>,
+    /// Page scrolling: the system the user grabbed scroll control on
+    /// (`userScrollSystem`); auto-follow yields until the cursor moves on
+    /// to a different system.
+    user_scroll_system: Option<usize>,
+    /// The widget-owned page scroll must return to 0 on the next paint
+    /// (`loadScore`'s `window.scrollTo(0, 0)`).
+    scroll_reset: bool,
+}
+
+/// One system's vertical span in layout px (y-down): the top staff's top
+/// line to the lowest staff line (a grand staff reaches into the bass).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SystemSpan {
+    index: usize,
+    top: f64,
+    bottom: f64,
 }
 
 impl NotationController {
@@ -113,11 +129,14 @@ impl NotationController {
             last_hover_key: RefCell::new(String::new()),
             lane: SlideLane::default(),
             pending_visible: None,
+            user_scroll_system: None,
+            scroll_reset: false,
         }
     }
 
     /// A fresh score is on the toolkit: reset all per-exercise feedback
-    /// (the Swift `loadScore` cleared ghost + ticks and re-set the SVG).
+    /// (the Swift `loadScore` cleared ghost + ticks and re-set the SVG),
+    /// scroll back to the top, and hand scroll control back to the follow.
     pub fn load_score(&mut self) {
         self.states.clear();
         self.ghost = None;
@@ -125,6 +144,8 @@ impl NotationController {
         self.follow = None;
         self.lane.reset();
         self.pending_visible = None;
+        self.clear_user_scroll();
+        self.scroll_reset = true;
         agg_gui::animation::request_draw();
     }
 
@@ -248,6 +269,14 @@ impl NotationController {
     /// fit-to-view widget satisfies without scrolling; see `widget.rs`).
     pub fn set_follow_top(&mut self, on: bool) {
         self.lane.set_follow_top(on);
+        if on {
+            // The feed slides by transform, never by page scroll: the
+            // widget drops back to the fitted view with the scroll at 0
+            // and no user override left behind.
+            self.clear_user_scroll();
+            self.scroll_reset = true;
+        }
+        agg_gui::animation::request_draw();
     }
 
     pub fn follow_top(&self) -> bool {
@@ -263,12 +292,88 @@ impl NotationController {
     /// the score so that system lands where the top line lives. `scale` is
     /// the display scale (layout → screen px); `now` the host clock.
     pub fn ensure_visible(&mut self, id: &str, scale: f64, now: f64) {
-        let Some((system, staff_top)) = self.system_of(id) else {
+        let Some(system) = self.system_of(id) else {
             return;
         };
-        if self.lane.enter_system(system, staff_top * scale, now) {
+        if self
+            .lane
+            .enter_system(system.index, system.top * scale, now)
+        {
             agg_gui::animation::request_draw();
         }
+    }
+
+    // --- Page scrolling (keep the current system in the upper third) ---
+
+    /// `ensureVisible(el)` on a scrolling page: the scroll offset (content
+    /// px, 0 = top, whole px) the page should glide to so the current
+    /// note's system sits in the upper third, or `None` to leave the
+    /// scroll alone. Verbatim rule: when the system's top is above 5% or
+    /// its bottom below 70% of the viewport, put its top at 18% —
+    /// `round(scrollY + r.top - vh*0.18)`, never below 0, never past the
+    /// end of the page. Yields to the user: after a manual scroll the
+    /// follow stays off while the cursor remains on that system and
+    /// re-engages when it enters a different one. Follow-top (survival)
+    /// slides by transform instead, so this is always `None` there.
+    pub fn follow_scroll_target(
+        &mut self,
+        id: &str,
+        scale: f64,
+        viewport_h: f64,
+        scroll: f64,
+    ) -> Option<f64> {
+        if self.lane.follow_top() {
+            return None;
+        }
+        let system = self.system_of(id)?;
+        if let Some(held) = self.user_scroll_system {
+            if held == system.index {
+                return None; // the user is in control here
+            }
+            self.user_scroll_system = None; // new system: re-engage
+        }
+        let top = system.top * scale - scroll;
+        let bottom = system.bottom * scale - scroll;
+        if top >= viewport_h * 0.05 && bottom <= viewport_h * 0.7 {
+            return None;
+        }
+        let content_h = {
+            let renderer = self.renderer.borrow();
+            renderer.toolkit().current_layout()?.height * scale
+        };
+        let max_scroll = (content_h - viewport_h).max(0.0);
+        let y = (scroll + top - viewport_h * 0.18).round();
+        Some(y.max(0.0).min(max_scroll.round()))
+    }
+
+    /// Manual wheel/trackbar input hands scroll control to the user for
+    /// the remainder of the current system (`userScrollSystem`). With no
+    /// current note there is nothing to hold, so the next cursor move
+    /// re-engages at once (the page's `document.body` placeholder).
+    pub fn note_user_scroll(&mut self) {
+        let current = self
+            .states
+            .iter()
+            .filter(|(_, &state)| state == NoteState::Current)
+            .map(|(id, _)| id.clone())
+            .min();
+        self.user_scroll_system = current.and_then(|id| self.system_of(&id)).map(|s| s.index);
+    }
+
+    /// Drop the manual-scroll override (`userScrollSystem = null`).
+    pub fn clear_user_scroll(&mut self) {
+        self.user_scroll_system = None;
+    }
+
+    /// The system the user holds scroll control on, if any.
+    pub fn user_scroll_system(&self) -> Option<usize> {
+        self.user_scroll_system
+    }
+
+    /// True once after each `load_score` / follow-top switch: the widget
+    /// puts its page scroll back to 0.
+    pub fn take_scroll_reset(&mut self) -> bool {
+        std::mem::take(&mut self.scroll_reset)
     }
 
     /// The system a note sits on and its top staff line's layout y (the
@@ -277,7 +382,7 @@ impl NotationController {
     /// ledger note still belongs to the staff its stem reaches for — which
     /// puts the boundary between two systems at the midpoint of the gap
     /// between them.
-    fn system_of(&self, id: &str) -> Option<(usize, f64)> {
+    fn system_of(&self, id: &str) -> Option<SystemSpan> {
         let renderer = self.renderer.borrow();
         let layout = renderer.toolkit().current_layout()?;
         let &(_, y_top, _, h) = layout.bounds_by_id.get(id)?;
@@ -314,7 +419,11 @@ impl NotationController {
                 (system, gap)
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(system, _)| (system.index, system.staff_top))
+            .map(|(system, _)| SystemSpan {
+                index: system.index,
+                top: system.staff_top,
+                bottom: bottoms[system.index],
+            })
     }
 
     /// The settled slide target (`slideOffset`, whole px; negative = up).
