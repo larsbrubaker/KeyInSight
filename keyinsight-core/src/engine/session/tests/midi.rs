@@ -141,12 +141,15 @@ fn midi_packet_timestamps_drive_tempo_classification() {
 
     // Play every note 80 ms late (inside the ±120 ms window, outside the
     // ±45 ms on-time band): the packet timestamps, not the tick time,
-    // decide the classification — the tick lands well after.
+    // decide the classification — the tick lands OUTSIDE the window
+    // (+230 ms), so tick-clock stamping would read as a miss, not late.
+    // (`process_midi_input` runs before the sweep in `tick`, so the
+    // packet is consumed before the sweep could mark the note missed.)
     for (midi, target) in &targets {
         let played_at = target + 0.080;
         ports.push(&[0x90, *midi, 90], played_at);
         ports.push(&[0x80, *midi, 0], played_at + 0.05);
-        *time.borrow_mut() = played_at + 0.03;
+        *time.borrow_mut() = played_at + 0.15;
         engine.tick();
     }
     // The deferred TempoFinish needs a tick past its deadline.

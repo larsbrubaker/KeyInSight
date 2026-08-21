@@ -200,6 +200,9 @@ impl SessionEngine {
         // The Swift engine leaves `exercise` at the first window; here the
         // accessor feeds the UI (inspect/key name), so it tracks the window.
         self.exercise = Some(window);
+        if self.demo_trace {
+            println!("engine: survival window advanced (played {played} into the seam)");
+        }
         agg_gui::animation::request_draw();
     }
 

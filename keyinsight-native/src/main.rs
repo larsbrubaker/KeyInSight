@@ -174,6 +174,12 @@ fn main() {
         midi::midi_smoke();
         return;
     }
+    // The scripted playthrough (the Swift `--demo`): headless, no window,
+    // no audio device needed; exits with the demo's code (0 = every act
+    // verified).
+    if std::env::args().any(|arg| arg == "--demo") {
+        std::process::exit(demo());
+    }
 
     let (app, handles) = build_keyinsight_app(UiFonts::bundled(), NativePlatform::new());
     // Dev convenience (the Swift `--piece <slug>` launch hook): open
@@ -212,6 +218,16 @@ fn main() {
         // actions, metronome sweep).
         move || handles.tick(),
     );
+}
+
+/// `keyinsight-native --demo`: the whole training loop, scripted, against
+/// a throwaway in-memory database and the scripted clock — the engine
+/// `engine:` trace and every `demo:` line go to stdout.
+fn demo() -> i32 {
+    use keyinsight_core::engine::{headless_demo_engine, run_demo};
+
+    let (mut engine, clock) = headless_demo_engine();
+    run_demo(&mut engine, clock)
 }
 
 fn mic_smoke() {

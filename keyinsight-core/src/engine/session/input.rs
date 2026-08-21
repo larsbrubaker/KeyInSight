@@ -3,7 +3,7 @@
 
 use crate::core::{NoteEvent, NoteEventKind, PitchSpelling};
 use crate::engine::session::{
-    Deferred, InputSource, PacingMode, Phase, SessionEngine, CONFIDENCE_THRESHOLD,
+    Deferred, InputSource, PacingMode, Phase, SessionEngine, TempoDebug, CONFIDENCE_THRESHOLD,
     LATENCY_OUTLIER_MS, SURVIVAL_SWAP_DELAY,
 };
 use crate::engine::{SelfPacedOutcome, TempoOutcome, Timing};
@@ -499,6 +499,21 @@ impl SessionEngine {
                 Some(tempo_matcher.expected[index].midi)
             }
         }
+    }
+
+    /// Tempo-run observability for the scripted demo: the targets, the
+    /// metronome clock now, and the resolutions — None outside a running
+    /// tempo exercise (the Swift `tempoDebug`).
+    pub fn tempo_debug(&self) -> Option<TempoDebug> {
+        if self.active_pacing != PacingMode::Tempo || !self.metronome.is_running() {
+            return None;
+        }
+        let tempo_matcher = self.tempo_matcher.as_ref()?;
+        Some(TempoDebug {
+            targets: tempo_matcher.expected.clone(),
+            now_ms: self.metronome.milliseconds_since_start((self.clock)()),
+            resolutions: tempo_matcher.resolutions.clone(),
+        })
     }
 
     /// The vocabulary hover entry point (the notation controller's

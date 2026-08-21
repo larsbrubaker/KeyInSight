@@ -2,7 +2,7 @@
 //! exercise phase, and the end-of-exercise summary (with the survival run
 //! report).
 
-use crate::engine::TempoReport;
+use crate::engine::{TempoExpected, TempoReport, TempoResolution};
 
 /// Which hand(s) training exercises target. Auto rotates by weakness and
 /// mixes in two-hand exercises once the bass seed range is mastered.
@@ -89,6 +89,15 @@ impl ExerciseSummary {
             (self.first_try_correct as f64 / self.note_count as f64 * 100.0).round() as i64
         }
     }
+}
+
+/// Tempo-run observability for the scripted demo (the Swift `tempoDebug`
+/// tuple): the targets, the metronome clock now, and what has resolved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct TempoDebug {
+    pub targets: Vec<TempoExpected>,
+    pub now_ms: f64,
+    pub resolutions: Vec<Option<TempoResolution>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

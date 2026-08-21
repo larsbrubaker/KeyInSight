@@ -53,7 +53,9 @@ use crate::skill::SkillModel;
 use crate::ui::KeyboardLayout;
 
 pub use progress::{ChordEntry, IntervalEntry, ProgressEntry, TransitionEntry};
-pub use types::{ExerciseSummary, HandMode, InputSource, PacingMode, Phase, SurvivalReport};
+pub use types::{
+    ExerciseSummary, HandMode, InputSource, PacingMode, Phase, SurvivalReport, TempoDebug,
+};
 
 /// Builds a platform backend per input source. Shells override to supply
 /// real MIDI / mic backends; the core default covers keyboard + unplugged
@@ -300,6 +302,9 @@ pub struct SessionEngine {
     pub(crate) started: bool,
     /// Deferred actions (deadline seconds on `clock`, action).
     pub(crate) deferred: Vec<(f64, Deferred)>,
+    /// The scripted demo's `engine:` trace lines (the Swift `isDemo`
+    /// prints in `start` and the survival window advance).
+    pub demo_trace: bool,
 }
 
 /// Drill cards the scripted demo plays before ending the (endless) drill.
@@ -439,6 +444,7 @@ impl SessionEngine {
             exercise_id: None,
             started: false,
             deferred: Vec::new(),
+            demo_trace: false,
         }
     }
 

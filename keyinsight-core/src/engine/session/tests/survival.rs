@@ -1,78 +1,41 @@
 //! Survival mode (OQ-25): the scripted demo's survival act (DemoDriver
-//! Act 8) plus the unit coverage the Swift suite never had — life budget,
-//! the seamless window swap, the swap's guards, neutral chunk bias, and
-//! the Hear It lockout.
+//! Act 8, driven through the ported driver) plus the unit coverage the
+//! Swift suite never had — life budget, the seamless window swap, the
+//! swap's guards, neutral chunk bias, and the Hear It lockout.
 
-use std::cell::RefCell;
 use std::rc::Rc;
 
 use super::{engine, note_on, test_clock, AcceptingAudio, NOW};
 use crate::engine::default_backend_factory;
-use crate::engine::session::{
-    ExerciseSummary, HandMode, InputSource, PacingMode, Phase, SessionEngine,
-};
+use crate::engine::demo::{DemoDriver, SURVIVAL_TARGET_NOTES};
+use crate::engine::session::{HandMode, PacingMode, Phase, SessionEngine};
 use crate::engine::SurvivalPolicy;
 use crate::notation::NoteState;
 use crate::persistence::{AppDatabase, MemoryStorage};
 use crate::score::Hands;
 
-/// DemoDriver: play cleanly past the seam (and through the deferred swap),
-/// then burn the lives.
-const SURVIVAL_TARGET_NOTES: usize = 30;
-const SURVIVAL_NOTE_GAP: f64 = 0.2;
-
-/// The demo's `survivalStep` loop: strike every member of the expected set
-/// per onset until the target, then inject wrong notes until the run dies.
-/// The clock advances between steps and the engine ticks, so the deferred
-/// window swap fires mid-run like the Swift dispatch timer.
-fn run_survival_act(engine: &mut SessionEngine, time: &Rc<RefCell<f64>>) -> ExerciseSummary {
-    let mut guard = 0;
-    loop {
-        if let Phase::Summary(summary) = engine.phase() {
-            return summary.clone();
-        }
-        guard += 1;
-        assert!(guard < 2000, "the run should end once the lives are spent");
-        let mut expected: Vec<u8> = engine.current_expected_midis().iter().copied().collect();
-        expected.sort_unstable();
-        if *engine.phase() != Phase::Playing || expected.is_empty() {
-            *time.borrow_mut() += 0.2;
-            engine.tick();
-            continue;
-        }
-        let at = *time.borrow();
-        if engine.survival_notes() < SURVIVAL_TARGET_NOTES {
-            for midi in expected {
-                engine.handle(note_on(midi, at));
-            }
-            *time.borrow_mut() += SURVIVAL_NOTE_GAP;
-        } else {
-            engine.handle(note_on(expected.iter().max().unwrap() + 1, at));
-            *time.borrow_mut() += 0.1;
-        }
-        engine.tick();
-    }
-}
-
-/// DemoDriver Act 8.
+/// DemoDriver Act 8: the ported driver's `survivalStep` loop strikes every
+/// member of the expected set per onset until the target, then injects
+/// wrong notes until the run dies; its scripted clock ticks the engine so
+/// the deferred window swap fires mid-run like the Swift dispatch timer.
 #[test]
 fn demo_survival_act() {
     let (mut engine, time) = engine();
-    engine.set_input_source(InputSource::Keyboard);
-    // Auto + survival must be two hands EVERY chunk (no jarring hand-mode
-    // switches mid-run).
-    engine.set_hand_mode(HandMode::Auto);
-    engine.enter_survival();
-    assert!(engine.is_survival());
-    assert_eq!(engine.survival_lives(), SurvivalPolicy::START_LIVES);
-    assert!(
-        engine.exercise_info().unwrap_or("").contains("two hands"),
-        "survival under Auto is two-handed: {:?}",
-        engine.exercise_info()
-    );
-    assert!(engine.is_diverted());
-
-    let summary = run_survival_act(&mut engine, &time);
+    {
+        let mut driver = DemoDriver::new(&mut engine, Rc::clone(&time));
+        assert_eq!(driver.act8_survival(), Ok(()), "log: {:#?}", driver.log);
+        assert!(driver
+            .log
+            .iter()
+            .any(|line| line.starts_with("demo: survival started — ")));
+        assert_eq!(
+            driver.log.last().map(String::as_str),
+            Some("demo: OK — unlock, tempo, repertoire, free play, drill, playback, self-verify, and survival all verified")
+        );
+    }
+    let Phase::Summary(summary) = engine.phase().clone() else {
+        panic!("expected the run summary, got {:?}", engine.phase());
+    };
     let survival = summary
         .survival
         .as_ref()
@@ -86,13 +49,7 @@ fn demo_survival_act() {
     assert!(survival.is_new_best);
     assert_eq!(engine.survival_best(), survival.score);
     assert_eq!(survival.best, survival.score);
-    // The sliding window must have advanced at least once — seamlessly,
-    // mid-play — during a 30-note run.
-    assert!(
-        engine.survival_window_gen() >= 2,
-        "survival window never advanced (gen {})",
-        engine.survival_window_gen()
-    );
+    assert!(engine.survival_window_gen() >= 2);
     assert!(!engine.is_survival());
     assert_eq!(summary.note_count, survival.notes);
     assert_eq!(summary.first_try_correct, survival.notes);

@@ -16,6 +16,9 @@ impl SessionEngine {
             return;
         }
         self.started = true;
+        if self.demo_trace {
+            println!("engine: start");
+        }
 
         if let Some(db) = &mut self.db {
             self.users = db.users();
