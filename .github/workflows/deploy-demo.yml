@@ -18,10 +18,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout KeyInSight
+      - name: Checkout KeyInSight (+ verovio-rust submodule, a path dep)
         uses: actions/checkout@v4
         with:
           path: KeyInSight
+          submodules: true
 
       # The workspace Cargo.toml patches agg-gui to ../agg-gui/agg-gui (see
       # docs/architecture.md), so CI needs the sibling layout to resolve
@@ -32,11 +33,6 @@ jobs:
           repository: larsbrubaker/agg-gui
           path: agg-gui
 
-      - name: Checkout sibling verovio-rust
-        uses: actions/checkout@v4
-        with:
-          repository: larsbrubaker/verovio-rust
-          path: verovio-rust
 
       - name: Install Rust (stable + wasm32 target)
         uses: dtolnay/rust-toolchain@stable

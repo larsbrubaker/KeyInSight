@@ -15,19 +15,20 @@ Live app: <https://larsbrubaker.github.io/KeyInSight/>
 (training loop works in the browser: press A S D F G H J K = C4–C5,
 W E T Y U = sharps, Z/X octave shift; progress persists in localStorage).
 
-Native app: `cargo run -p keyinsight-native` (persists to
-`%APPDATA%/KeyInSight/keyinsight.json`).
+Native app: `cargo run -p keyinsight-native` — Windows and macOS (persists to
+`%APPDATA%/KeyInSight/keyinsight.json` / `~/Library/Application Support/KeyInSight/keyinsight.json`).
 
 ## Repository layout (three repos, all pushed)
 
 | Repo | License | Role |
 |---|---|---|
 | [KeyInSight](https://github.com/larsbrubaker/KeyInSight) | MIT | The app. Submodule of rust-apps. Contains `keyinsight-swift-reference/` (pinned Swift source). |
-| [verovio-rust](https://github.com/larsbrubaker/verovio-rust) | **LGPL-3.0** | Music engraving port (Verovio → Rust, renders via agg-gui). Separate repo purely for license isolation — never inline its code into the app. Contains `verovio-cpp-reference/` pinned at `8d42439` (6.2.1, same revision the Swift app pinned). Submodule of rust-apps. |
+| [verovio-rust](https://github.com/larsbrubaker/verovio-rust) | **LGPL-3.0** | Music engraving port (Verovio → Rust, renders via agg-gui). Separate repo purely for license isolation — never inline its code into the app. Contains `verovio-cpp-reference/` pinned at `8d42439` (6.2.1, same revision the Swift app pinned). Submodule of KeyInSight (`verovio-rust/`) and of rust-apps. |
 | [agg-gui](https://github.com/larsbrubaker/agg-gui) | MIT | UI framework. Path-patched sibling (`[patch.crates-io]`). |
 
-Local layout must be siblings (the rust-apps superproject provides this):
-`../agg-gui`, `../verovio-rust` next to this repo. CI clones the same way.
+agg-gui must be a sibling at `../agg-gui` (the rust-apps superproject
+provides this; CI clones it the same way). verovio-rust is a submodule of
+this repo at `verovio-rust/` (`git submodule update --init verovio-rust`).
 
 ## Setup on a fresh machine
 
