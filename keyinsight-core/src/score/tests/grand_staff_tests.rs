@@ -8,8 +8,8 @@ use crate::engine::{SelfPacedMatcher, SelfPacedOutcome};
 use crate::audio::MidiFileEncoder;
 use crate::notation::NotationRenderer;
 use crate::score::{
-    Exercise, ExerciseGenerator, MusicXmlEncoder, MusicXmlImporter, NoteDuration, PitchOption,
-    ScoreNote, Staff,
+    Exercise, ExerciseGenerator, Hands, MusicXmlEncoder, MusicXmlImporter, NoteDuration,
+    PitchOption, ScoreNote, Staff,
 };
 
 fn matched(index: usize, set_complete: bool, exercise_complete: bool) -> SelfPacedOutcome {
@@ -231,7 +231,7 @@ fn playback_covers_both_voices_and_duration_is_longest_voice() {
 #[test]
 fn generator_two_handed_adds_alternating_bass_ending_on_tonic() {
     let mut generator = ExerciseGenerator::default();
-    generator.config.two_handed = true;
+    generator.config.hands = Hands::Both;
     generator.config.measures = 3;
     let mut rng = SplitMix64::new(7);
     let ex = generator.generate(

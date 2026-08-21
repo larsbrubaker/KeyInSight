@@ -1,45 +1,109 @@
 //! Ports the score/skill half of `Tests/KeyInSightTests/LeftHandTests.swift`
-//! (`LeftHandTrainingTests`): bass skill items, bass-clef encoding, and the
-//! per-staff key availability. The generator-driven tests (`hands = Left`)
-//! arrive with the generator's hands modes.
+//! (`LeftHandTrainingTests`): bass-clef generation and encoding, drill
+//! cards on the grand staff, bass skill items, and the per-staff key
+//! availability. (`SynchronousChordTests`, `FreePlayRecordingTests`, and
+//! `PartialReplayTests` from the same file are engine/matcher tests.)
 
 use std::collections::HashSet;
 
+use crate::core::SplitMix64;
+use crate::notation::NotationRenderer;
 use crate::persistence::PitchItemStat;
 use crate::score::{
-    DifficultyDescriptors, Exercise, MusicXmlEncoder, NoteDuration, ScoreNote, Staff,
+    DifficultyDescriptors, Exercise, ExerciseGenerator, Hands, MusicXmlEncoder, NoteDuration,
+    PitchOption, ScoreNote, Staff,
 };
 use crate::skill::{SkillModel, BASS_UNLOCK_ORDER, UNLOCK_ORDER};
 
 const NOW: i64 = 1_700_000_000_000;
 const BASS_SEED: [u8; 5] = [48, 50, 52, 53, 55];
 
-/// A hand-built left-hand walk over the bass seed: what `hands = Left`
-/// generation produces (notes empty, the bass voice carrying the line).
-fn bass_only_exercise() -> Exercise {
-    let bass: Vec<ScoreNote> = [
-        (Some(48), NoteDuration::Quarter),
-        (Some(50), NoteDuration::Quarter),
-        (Some(52), NoteDuration::Half),
-        (None, NoteDuration::Quarter),
-        (Some(55), NoteDuration::Quarter),
-        (Some(53), NoteDuration::Half),
-    ]
-    .iter()
-    .map(|&(midi, duration)| ScoreNote::new(midi, duration).with_staff(Staff::Bass))
-    .collect();
-    Exercise::new(vec![], 4).with_bass(bass)
+fn bass_seed_options() -> Vec<PitchOption> {
+    BASS_SEED.iter().map(|&m| PitchOption::new(m)).collect()
+}
+
+fn generate_left(seed: u64, measures: i32) -> Exercise {
+    let mut rng = SplitMix64::new(seed);
+    let mut generator = ExerciseGenerator::default();
+    generator.config.measures = measures;
+    generator.config.hands = Hands::Left;
+    generator.generate(&bass_seed_options(), &mut rng)
+}
+
+#[test]
+fn left_hand_walk_lives_in_the_bass_voice() {
+    let allowed: HashSet<u8> = BASS_SEED.iter().copied().collect();
+    for seed in 1..=30u64 {
+        let ex = generate_left(seed, 3);
+        assert!(ex.notes.is_empty());
+        assert!(ex.is_bass_only());
+        assert!(ex.bass_notes.iter().all(|n| n.staff == Staff::Bass));
+        for note in ex.bass_notes.iter().filter(|n| !n.is_rest()) {
+            assert!(allowed.contains(&note.midi.unwrap()), "seed {seed}");
+        }
+        assert_eq!(ex.bass_measures().len(), 3, "seed {seed}");
+        for measure in ex.bass_measures() {
+            assert_eq!(
+                measure.iter().map(|n| n.duration.units()).sum::<i32>(),
+                ex.units_per_measure(),
+                "seed {seed}"
+            );
+        }
+    }
 }
 
 #[test]
 fn bass_only_encodes_as_single_bass_clef_staff() {
-    let exercise = bass_only_exercise();
-    assert!(exercise.is_bass_only());
-    let xml = MusicXmlEncoder::encode(&exercise);
+    let xml = MusicXmlEncoder::encode(&generate_left(3, 2));
     assert!(xml.contains("<clef><sign>F</sign><line>4</line></clef>"));
     assert!(!xml.contains("<staves>"));
     assert!(!xml.contains("<backup>"));
     assert!(!xml.contains("<staff>"));
+}
+
+#[test]
+fn bass_only_match_events_are_all_bass_staff() {
+    let ex = generate_left(4, 2);
+    let events = ex.match_events();
+    assert!(!events.is_empty());
+    assert!(events
+        .iter()
+        .all(|e| e.staves.iter().all(|&s| s == Staff::Bass)));
+}
+
+/// Deferred to the notation step: the sibling `verovio-rust` importer
+/// (`src/import.rs`) accepts an F clef only on a two-staff part, so a
+/// single bass-clef staff fails to load. Un-ignore once it does.
+#[test]
+#[ignore]
+fn bass_only_renders_and_pitches_agree_per_id() {
+    let mut renderer = NotationRenderer::new();
+    let ex = generate_left(5, 2);
+    let rendered = renderer
+        .render(&MusicXmlEncoder::encode(&ex))
+        .expect("bass-only exercise engraves");
+    let events = ex.match_events();
+    assert_eq!(rendered.note_ids.len(), events.len()); // monophonic line
+    for (id, event) in rendered.note_ids.iter().zip(&events) {
+        assert_eq!(renderer.midi_pitch(id), Some(event.pitches[0]));
+    }
+}
+
+#[test]
+fn drill_cards_render_on_the_grand_staff() {
+    // Which-clef is part of the read: the other staff holds a rest.
+    let mut rng = SplitMix64::new(1);
+    let bass_card =
+        ExerciseGenerator::drill_note(&bass_seed_options(), Staff::Bass, None, &mut rng);
+    assert!(bass_card.is_two_voice() && !bass_card.is_bass_only());
+    assert!(bass_card.bass_notes.len() == 1 && !bass_card.bass_notes[0].is_rest());
+    assert!(bass_card.notes.len() == 1 && bass_card.notes[0].is_rest());
+    assert!(MusicXmlEncoder::encode(&bass_card).contains("<staves>2</staves>"));
+    let treble_card =
+        ExerciseGenerator::drill_note(&[PitchOption::new(60)], Staff::Treble, None, &mut rng);
+    assert!(treble_card.is_two_voice());
+    assert!(treble_card.bass_notes.len() == 1 && treble_card.bass_notes[0].is_rest());
+    assert_eq!(treble_card.match_events().len(), 1);
 }
 
 // --- Bass skill model ---

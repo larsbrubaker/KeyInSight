@@ -27,75 +27,81 @@ impl RepertoirePiece {
     }
 }
 
-/// (slug, bytes) for every bundled piece, sorted by filename — the same
-/// order the Swift `Bundle.module` enumeration produced.
+macro_rules! piece {
+    ($slug:literal) => {
+        (
+            $slug,
+            include_bytes!(concat!("../../assets/pieces/", $slug, ".musicxml")) as &[u8],
+        )
+    };
+}
+
+/// (slug, bytes) for every bundled piece, sorted by filename (including
+/// the `.musicxml` extension, so `-two-hands` editions sort before their
+/// base: `'-' < '.'`) — the same order the Swift `Bundle.module`
+/// enumeration produced.
 const BUNDLED_PIECES: &[(&str, &[u8])] = &[
-    (
-        "camptown-races-two-hands",
-        include_bytes!("../../assets/pieces/camptown-races-two-hands.musicxml"),
-    ),
-    (
-        "camptown-races",
-        include_bytes!("../../assets/pieces/camptown-races.musicxml"),
-    ),
-    (
-        "friska-two-hands",
-        include_bytes!("../../assets/pieces/friska-two-hands.musicxml"),
-    ),
-    ("friska", include_bytes!("../../assets/pieces/friska.musicxml")),
-    (
-        "gymnopedie-1",
-        include_bytes!("../../assets/pieces/gymnopedie-1.musicxml"),
-    ),
-    (
-        "happy-birthday-two-hands",
-        include_bytes!("../../assets/pieces/happy-birthday-two-hands.musicxml"),
-    ),
-    (
-        "happy-birthday",
-        include_bytes!("../../assets/pieces/happy-birthday.musicxml"),
-    ),
-    (
-        "jingle-bells-two-hands",
-        include_bytes!("../../assets/pieces/jingle-bells-two-hands.musicxml"),
-    ),
-    (
-        "jingle-bells",
-        include_bytes!("../../assets/pieces/jingle-bells.musicxml"),
-    ),
-    (
-        "minuet-in-g",
-        include_bytes!("../../assets/pieces/minuet-in-g.musicxml"),
-    ),
-    (
-        "moonlight-opening",
-        include_bytes!("../../assets/pieces/moonlight-opening.musicxml"),
-    ),
-    (
-        "ode-to-joy-full",
-        include_bytes!("../../assets/pieces/ode-to-joy-full.musicxml"),
-    ),
-    (
-        "ode-to-joy-two-hands",
-        include_bytes!("../../assets/pieces/ode-to-joy-two-hands.musicxml"),
-    ),
-    (
-        "ode-to-joy",
-        include_bytes!("../../assets/pieces/ode-to-joy.musicxml"),
-    ),
-    (
-        "sheep-may-safely-graze",
-        include_bytes!("../../assets/pieces/sheep-may-safely-graze.musicxml"),
-    ),
-    ("solace", include_bytes!("../../assets/pieces/solace.musicxml")),
-    (
-        "twinkle-twinkle-g",
-        include_bytes!("../../assets/pieces/twinkle-twinkle-g.musicxml"),
-    ),
-    (
-        "twinkle-twinkle",
-        include_bytes!("../../assets/pieces/twinkle-twinkle.musicxml"),
-    ),
+    piece!("amazing-grace-two-hands"),
+    piece!("amazing-grace"),
+    piece!("au-clair-de-la-lune-two-hands"),
+    piece!("au-clair-de-la-lune"),
+    piece!("auld-lang-syne-two-hands"),
+    piece!("auld-lang-syne"),
+    piece!("baa-baa-black-sheep-two-hands"),
+    piece!("baa-baa-black-sheep"),
+    piece!("camptown-races-two-hands"),
+    piece!("camptown-races"),
+    piece!("canon-in-d-two-hands"),
+    piece!("canon-in-d"),
+    piece!("eine-kleine-nachtmusik-two-hands"),
+    piece!("eine-kleine-nachtmusik"),
+    piece!("frere-jacques-two-hands"),
+    piece!("frere-jacques"),
+    piece!("friska-two-hands"),
+    piece!("friska"),
+    piece!("fur-elise-two-hands"),
+    piece!("fur-elise"),
+    piece!("good-king-wenceslas-two-hands"),
+    piece!("good-king-wenceslas"),
+    piece!("gymnopedie-1"),
+    piece!("happy-birthday-two-hands"),
+    piece!("happy-birthday"),
+    piece!("hot-cross-buns-two-hands"),
+    piece!("hot-cross-buns"),
+    piece!("jingle-bells-two-hands"),
+    piece!("jingle-bells"),
+    piece!("korobeiniki-two-hands"),
+    piece!("korobeiniki"),
+    piece!("kumbaya-two-hands"),
+    piece!("kumbaya"),
+    piece!("lightly-row-two-hands"),
+    piece!("lightly-row"),
+    piece!("london-bridge-two-hands"),
+    piece!("london-bridge"),
+    piece!("mary-had-a-little-lamb-two-hands"),
+    piece!("mary-had-a-little-lamb"),
+    piece!("minuet-in-g-full-two-hands"),
+    piece!("minuet-in-g-full"),
+    piece!("minuet-in-g"),
+    piece!("moonlight-opening"),
+    piece!("my-country-tis-of-thee-two-hands"),
+    piece!("my-country-tis-of-thee"),
+    piece!("ode-to-joy-full"),
+    piece!("ode-to-joy-two-hands"),
+    piece!("ode-to-joy"),
+    piece!("old-macdonald-two-hands"),
+    piece!("old-macdonald"),
+    piece!("sheep-may-safely-graze"),
+    piece!("silent-night-two-hands"),
+    piece!("silent-night"),
+    piece!("solace"),
+    piece!("surprise-symphony-two-hands"),
+    piece!("surprise-symphony"),
+    piece!("twinkle-twinkle-g"),
+    piece!("twinkle-twinkle-two-hands"),
+    piece!("twinkle-twinkle"),
+    piece!("yankee-doodle-two-hands"),
+    piece!("yankee-doodle"),
 ];
 
 pub struct RepertoireLibrary;

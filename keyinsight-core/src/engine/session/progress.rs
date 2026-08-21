@@ -5,7 +5,7 @@ use crate::core::PitchSpelling;
 use crate::engine::session::SessionEngine;
 use crate::notation::{NotationController, NoteState};
 use crate::score::{Exercise, MusicXmlEncoder, NoteDuration, ScoreNote};
-use crate::skill::{ItemState, Thresholds};
+use crate::skill::{ItemState, SkillModel, Thresholds};
 
 #[derive(Debug, Clone)]
 pub struct ProgressEntry {
@@ -57,7 +57,7 @@ impl SessionEngine {
             .interval_states
             .iter()
             .map(|state| {
-                let size = ["unison", "2nd", "3rd", "4th"][state.delta.unsigned_abs() as usize];
+                let size = SkillModel::interval_size_display_name(state.delta.abs());
                 let arrow = if state.delta == 0 {
                     ""
                 } else if state.delta > 0 {

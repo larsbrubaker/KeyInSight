@@ -231,9 +231,6 @@ fn survival_score_rewards_volume_rate_and_difficulty() {
     assert_eq!(SurvivalPolicy::notes_per_minute(30, 60.0), 30.0);
 }
 
-// `drillCardsNeverRepeatBackToBack` lives with the ExerciseGenerator port
-// (score tests).
-
 #[test]
 fn rhythm_advance_from_self_paced_streak() {
     // A streak of clean self-paced exercises earns the rung too.

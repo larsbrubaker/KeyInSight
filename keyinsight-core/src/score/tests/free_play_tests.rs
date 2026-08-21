@@ -70,6 +70,8 @@ fn drill_is_a_single_whole_note() {
     let mut rng = SplitMix64::new(3);
     let drill = ExerciseGenerator::drill_note(
         &[60, 62, 64].iter().map(|&m| PitchOption::new(m)).collect::<Vec<_>>(),
+        Staff::Treble,
+        None,
         &mut rng,
     );
     assert_eq!(drill.notes.len(), 1);
@@ -87,7 +89,9 @@ fn drill_sampling_favors_weak_items() {
     ];
     let mut weak_count = 0;
     for _ in 0..600 {
-        if ExerciseGenerator::drill_note(&pitches, &mut rng).notes[0].midi == Some(64) {
+        if ExerciseGenerator::drill_note(&pitches, Staff::Treble, None, &mut rng).notes[0].midi
+            == Some(64)
+        {
             weak_count += 1;
         }
     }

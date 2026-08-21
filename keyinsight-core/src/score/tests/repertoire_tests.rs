@@ -1,6 +1,7 @@
 //! Ports `Tests/KeyInSightTests/RepertoireTests.swift`
-//! (MusicXMLImporterTests, RepertoireLibraryTests,
-//! PiecePlayPersistenceTests, TwinkleCompletenessTests).
+//! (MusicXMLImporterTests, PiecePlayPersistenceTests,
+//! TwinkleCompletenessTests). RepertoireLibraryTests lives in
+//! `bundled_library_tests.rs`.
 
 use crate::persistence::AppDatabase;
 use crate::score::{
@@ -152,66 +153,6 @@ fn round_trips_our_own_encoder() {
     let xml = MusicXmlEncoder::encode(&original);
     let piece = MusicXmlImporter::parse(xml.as_bytes(), "rt").unwrap();
     assert_eq!(piece.exercise, original);
-}
-
-// --- RepertoireLibraryTests ---
-
-#[test]
-fn bundled_pieces_load() {
-    let pieces = RepertoireLibrary::bundled();
-    assert_eq!(pieces.len(), 18);
-    assert_eq!(
-        pieces.iter().map(|p| p.slug.as_str()).collect::<Vec<_>>(),
-        [
-            "camptown-races-two-hands",
-            "camptown-races",
-            "friska-two-hands",
-            "friska",
-            "gymnopedie-1",
-            "happy-birthday-two-hands",
-            "happy-birthday",
-            "jingle-bells-two-hands",
-            "jingle-bells",
-            "minuet-in-g",
-            "moonlight-opening",
-            "ode-to-joy-full",
-            "ode-to-joy-two-hands",
-            "ode-to-joy",
-            "sheep-may-safely-graze",
-            "solace",
-            "twinkle-twinkle-g",
-            "twinkle-twinkle",
-        ]
-    );
-
-    let minuet = pieces.iter().find(|p| p.slug == "minuet-in-g").unwrap();
-    assert_eq!(minuet.title, "Minuet in G");
-    assert_eq!(minuet.exercise.fifths, 1);
-    assert_eq!(minuet.exercise.beats_per_measure, 3);
-    assert_eq!(minuet.exercise.measures().len(), 8);
-    // Every measure exactly full (last one is a dotted half = 6 units).
-    for measure in minuet.exercise.measures() {
-        assert_eq!(measure.iter().map(|n| n.duration.units()).sum::<i32>(), 6);
-    }
-    // Twinkle is the easiest of the set; Solace is the hardest melody.
-    let twinkle = pieces.iter().find(|p| p.slug == "twinkle-twinkle").unwrap();
-    let solace = pieces.iter().find(|p| p.slug == "solace").unwrap();
-    assert!(twinkle.difficulty_index() < minuet.difficulty_index());
-    assert!(twinkle.difficulty_index() < solace.difficulty_index());
-}
-
-#[test]
-fn measure_indices_for_sounded_notes() {
-    let pieces = RepertoireLibrary::bundled();
-    let ode = pieces.iter().find(|p| p.slug == "ode-to-joy").unwrap();
-    let indices = ode.exercise.sounded_note_measure_indices();
-    assert_eq!(indices.len(), ode.exercise.sounded_notes().len());
-    assert_eq!(indices.first(), Some(&0));
-    assert_eq!(indices.last(), Some(&7));
-    // Monotonically non-decreasing.
-    for pair in indices.windows(2) {
-        assert!(pair[0] <= pair[1]);
-    }
 }
 
 // --- PiecePlayPersistenceTests ---

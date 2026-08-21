@@ -1,7 +1,7 @@
 //! Ports `Tests/KeyInSightTests/GeneratorTests.swift`.
 
 use crate::core::SplitMix64;
-use crate::score::{Exercise, ExerciseGenerator, NoteDuration, PitchOption};
+use crate::score::{Exercise, ExerciseGenerator, NoteDuration, PitchOption, Staff};
 
 const SEED_PITCHES: [u8; 5] = [60, 62, 64, 65, 67];
 
@@ -228,7 +228,10 @@ fn generated_exercise_carries_configured_key() {
     // G-major diatonic subset around the staff.
     let pitches: [u8; 5] = [62, 64, 66, 67, 69];
     let exercise = generator.generate(
-        &pitches.iter().map(|&m| PitchOption::new(m)).collect::<Vec<_>>(),
+        &pitches
+            .iter()
+            .map(|&m| PitchOption::new(m))
+            .collect::<Vec<_>>(),
         &mut rng,
     );
     assert_eq!(exercise.fifths, 1);
@@ -268,8 +271,26 @@ fn weak_item_bias_increases_frequency() {
 #[test]
 fn drill_note_is_single_whole_note_from_set() {
     let mut rng = SplitMix64::new(3);
-    let exercise = ExerciseGenerator::drill_note(&options(), &mut rng);
+    let exercise = ExerciseGenerator::drill_note(&options(), Staff::Treble, None, &mut rng);
     assert_eq!(exercise.notes.len(), 1);
     assert_eq!(exercise.notes[0].duration, NoteDuration::Whole);
     assert!(SEED_PITCHES.contains(&exercise.notes[0].midi.unwrap()));
+}
+
+/// Ports `TempoTests.drillCardsNeverRepeatBackToBack` (a generator test).
+#[test]
+fn drill_cards_never_repeat_back_to_back() {
+    let pitches: Vec<PitchOption> = [60, 62, 64].iter().map(|&m| PitchOption::new(m)).collect();
+    let mut rng = SplitMix64::new(4);
+    let mut last: Option<u8> = None;
+    for _ in 0..60 {
+        let card = ExerciseGenerator::drill_note(&pitches, Staff::Treble, last, &mut rng);
+        let midi = card.all_sounded_notes()[0].midi.unwrap();
+        assert_ne!(Some(midi), last);
+        last = Some(midi);
+    }
+    // Degenerate single-pitch set: repetition allowed over stalling.
+    let only = [PitchOption::new(60)];
+    let card = ExerciseGenerator::drill_note(&only, Staff::Treble, Some(60), &mut rng);
+    assert_eq!(card.all_sounded_notes()[0].midi, Some(60));
 }

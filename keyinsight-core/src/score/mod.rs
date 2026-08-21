@@ -17,7 +17,7 @@ mod repertoire;
 
 pub use difficulty::DifficultyDescriptors;
 pub use free_play::FreePlayScore;
-pub use generator::{ExerciseGenerator, GeneratorConfig, PitchOption};
+pub use generator::{ChordShape, ExerciseGenerator, GeneratorConfig, Hands, PitchOption};
 pub use model::{Exercise, MatchEvent, NoteDuration, NoteSpan, ScoreNote, Staff, TieRole};
 pub use musicxml_encoder::MusicXmlEncoder;
 pub use musicxml_importer::{ImportError, ImportedPiece, MusicXmlImporter};

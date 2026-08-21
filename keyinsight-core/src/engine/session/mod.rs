@@ -20,6 +20,7 @@
 //! and the system RNG is a seeded SplitMix64 (deterministic across
 //! platforms).
 
+mod completion;
 mod lifecycle;
 mod input;
 mod modes;

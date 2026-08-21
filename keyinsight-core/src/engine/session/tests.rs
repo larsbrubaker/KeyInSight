@@ -425,3 +425,16 @@ fn mic_backend_detects_the_expected_note() {
         "C4 note-on emitted: {events:?}"
     );
 }
+
+#[test]
+fn interval_entries_label_the_whole_ladder() {
+    // The ladder spans -7..=7; every rung gets a readable size + arrow.
+    let (engine, _) = engine();
+    let entries = engine.interval_entries();
+    assert_eq!(entries.len(), 15);
+    let labels: Vec<&str> = entries.iter().map(|e| e.label.as_str()).collect();
+    assert!(labels.contains(&"unison"));
+    assert!(labels.contains(&"5th ↑"));
+    assert!(labels.contains(&"octave ↓"));
+    assert!(labels.contains(&"2nd ↑"));
+}
