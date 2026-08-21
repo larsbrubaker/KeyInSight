@@ -4,6 +4,7 @@
 use crate::core::{NoteEvent, NoteEventKind, PitchSpelling};
 use crate::engine::session::{
     Deferred, InputSource, PacingMode, Phase, SessionEngine, CONFIDENCE_THRESHOLD,
+    LATENCY_OUTLIER_MS,
 };
 use crate::engine::{SelfPacedOutcome, TempoOutcome, Timing};
 use crate::notation::NoteState;
@@ -57,7 +58,7 @@ impl SessionEngine {
             return;
         }
         let anchored = self.anchor(event);
-        match self.mode {
+        match self.active_pacing {
             PacingMode::SelfPaced => self.handle_self_paced(anchored),
             PacingMode::Tempo => self.handle_tempo(anchored),
         }
@@ -67,7 +68,7 @@ impl SessionEngine {
     /// input sources): the first pitch-class match sets the octave; free
     /// play and mic input are untouched.
     fn anchor(&mut self, event: NoteEvent) -> NoteEvent {
-        if !self.anchor_eligible || !self.input_source.supports_timing() {
+        if !self.follow_octave || !self.anchor_eligible || !self.input_source.supports_timing() {
             return event;
         }
         let midi = if event.kind == NoteEventKind::On {
@@ -93,7 +94,7 @@ impl SessionEngine {
             return;
         }
 
-        match matcher.consume_note_on(event.midi) {
+        match matcher.consume_note_on_at(event.midi, event.timestamp) {
             SelfPacedOutcome::Matched {
                 index,
                 set_complete,
@@ -104,29 +105,36 @@ impl SessionEngine {
                 self.color_matched(event.midi, index);
 
                 let was_error = self.errors_on_current_note > 0;
-                let latency_ms = (event.timestamp - self.current_note_start) * 1000.0;
+                // A latency past the outlier bar is a BREAK, not slowness —
+                // don't let a coffee poison the item's speed EWMA.
+                let raw_latency_ms = (event.timestamp - self.current_note_start) * 1000.0;
+                let latency_ms: Option<f64> = if raw_latency_ms > LATENCY_OUTLIER_MS {
+                    None
+                } else {
+                    Some(raw_latency_ms)
+                };
+                let clean_latency = if was_error { None } else { latency_ms };
                 let staff = self.staff_for(event.midi, index);
-                self.record_attempt(
-                    event.midi,
-                    staff,
-                    was_error,
-                    if was_error { None } else { Some(latency_ms) },
-                );
-                self.record_interval_attempt(
-                    index,
-                    was_error,
-                    if was_error { None } else { Some(latency_ms) },
-                );
+                self.record_attempt(event.midi, staff, was_error, clean_latency);
+                self.record_interval_attempt(index, was_error, clean_latency);
                 if !set_complete {
                     return;
                 }
 
                 // Event-level bookkeeping happens when the full set lands.
-                self.latencies_ms.push(latency_ms);
+                if let Some(latency_ms) = latency_ms {
+                    self.latencies_ms.push(latency_ms);
+                }
                 if !was_error {
                     self.first_try_correct += 1;
                     self.streak += 1;
+                    // A clean event means intentional play: recording resumes.
+                    if self.stats_suppressed {
+                        self.stats_suppressed = false;
+                        self.storm_detector.reset();
+                    }
                 }
+                self.record_chord_shape_attempt(index, was_error, clean_latency);
                 self.errors_on_current_note = 0;
                 if exercise_complete {
                     self.finish_exercise();
@@ -139,10 +147,7 @@ impl SessionEngine {
             SelfPacedOutcome::Restarted { index, played } => {
                 // The chord broke apart (a member landed outside the
                 // window): error, and only the late strike carries into the
-                // new attempt. Unreachable until the session feeds event
-                // timestamps to `consume_note_on_at` (the chord-window
-                // wiring step, which also ports `resetEventMarks` and
-                // `survivalLifeLost`).
+                // new attempt.
                 self.log(&event, "chord_break", Some(index), None);
                 self.errors_on_current_note += 1;
                 self.errors_this_exercise += 1;
@@ -150,6 +155,8 @@ impl SessionEngine {
                 self.streak = 0;
                 let staff = self.staff_for(played, index);
                 self.record_attempt(played, staff, true, None);
+                self.reset_event_marks(index, played);
+                // Survival's life loss hooks in here once survival lands.
             }
             SelfPacedOutcome::Wrong { index, played } => {
                 self.log(&event, "wrong", Some(index), None);
@@ -160,6 +167,11 @@ impl SessionEngine {
                 self.mark_wrong(index);
                 self.show_ghost(played, index);
                 self.flash_wrong_key(played);
+                // Mash guard: a burst of wrong strikes is noise, not practice.
+                if self.storm_detector.record_wrong(event.timestamp) {
+                    self.stats_suppressed = true;
+                }
+                // Survival's life loss hooks in here once survival lands.
             }
             SelfPacedOutcome::Ignored => {
                 let index = self.matcher.as_ref().map(|m| m.index());
@@ -169,20 +181,52 @@ impl SessionEngine {
         agg_gui::animation::request_draw();
     }
 
-    /// Color the specific notehead whose pitch was just played (chords/two
-    /// hands: the first unconsumed position with that pitch).
+    /// After a broken chord attempt: only `kept` stays marked; the other
+    /// members return to "play me" state.
+    fn reset_event_marks(&mut self, index: usize, kept: u8) {
+        let event = &self.events[index];
+        self.consumed_positions[index] = event
+            .pitches
+            .iter()
+            .position(|&p| p == kept)
+            .into_iter()
+            .collect();
+        {
+            let mut notation = self.notation.borrow_mut();
+            for (pos, id) in self.event_ids[index].iter().enumerate() {
+                let state = if self.consumed_positions[index].contains(&pos) {
+                    NoteState::Correct
+                } else {
+                    NoteState::Current
+                };
+                notation.set_state(id, Some(state));
+            }
+        }
+        self.refresh_expected_from_unconsumed(index);
+    }
+
+    /// Color the notehead(s) whose pitch was just played. A pitch doubled
+    /// across staves (cross-staff unison in imported scores) is one
+    /// physical key — the single press satisfies every matching notehead.
     fn color_matched(&mut self, pitch: u8, index: usize) {
         let event = &self.events[index];
-        let Some(pos) = (0..event.pitches.len()).find(|&p| {
-            event.pitches[p] == pitch && !self.consumed_positions[index].contains(&p)
-        }) else {
-            return;
-        };
-        self.consumed_positions[index].insert(pos);
-        self.notation
-            .borrow_mut()
-            .set_state(&self.event_ids[index][pos], Some(NoteState::Correct));
-        // Keyboard strip: only the still-unplayed members stay highlighted.
+        let positions: Vec<usize> = (0..event.pitches.len())
+            .filter(|&p| {
+                event.pitches[p] == pitch && !self.consumed_positions[index].contains(&p)
+            })
+            .collect();
+        {
+            let mut notation = self.notation.borrow_mut();
+            for pos in positions {
+                self.consumed_positions[index].insert(pos);
+                notation.set_state(&self.event_ids[index][pos], Some(NoteState::Correct));
+            }
+        }
+        self.refresh_expected_from_unconsumed(index);
+    }
+
+    /// Keyboard strip: only the still-unplayed members stay highlighted.
+    fn refresh_expected_from_unconsumed(&mut self, index: usize) {
         let event = &self.events[index];
         self.current_expected_midis = (0..event.pitches.len())
             .filter(|p| !self.consumed_positions[index].contains(p))
@@ -190,7 +234,7 @@ impl SessionEngine {
             .collect();
     }
 
-    fn staff_for(&self, pitch: u8, index: usize) -> Staff {
+    pub(crate) fn staff_for(&self, pitch: u8, index: usize) -> Staff {
         let event = &self.events[index];
         event
             .pitches
@@ -261,7 +305,8 @@ impl SessionEngine {
                     self.streak += 1;
                 }
                 let midi = self.events[index].pitches[0];
-                self.record_attempt(midi, Staff::Treble, was_error, None);
+                let staff = self.events[index].staves[0];
+                self.record_attempt(midi, staff, was_error, None);
                 self.record_interval_attempt(index, was_error, None);
                 self.advance_tempo_cursor();
                 if exercise_complete {
@@ -320,7 +365,7 @@ impl SessionEngine {
     // --- Tempo run plumbing ---
 
     pub(crate) fn sweep_tick(&mut self) {
-        if self.phase != Phase::Playing || self.mode != PacingMode::Tempo {
+        if self.phase != Phase::Playing || self.active_pacing != PacingMode::Tempo {
             return;
         }
         let Some(exercise_beats) = self.exercise.as_ref().map(|e| e.beats_per_measure) else {
@@ -358,7 +403,8 @@ impl SessionEngine {
                 self.record_measure_error(index);
                 self.streak = 0;
                 let midi = self.events[index].pitches[0];
-                self.record_attempt(midi, Staff::Treble, true, None);
+                let staff = self.events[index].staves[0];
+                self.record_attempt(midi, staff, true, None);
                 self.record_interval_attempt(index, true, None);
             }
             self.advance_tempo_cursor();
@@ -397,7 +443,7 @@ impl SessionEngine {
         if self.phase != Phase::Playing {
             return None;
         }
-        match self.mode {
+        match self.active_pacing {
             PacingMode::SelfPaced => {
                 let matcher = self.matcher.as_ref()?;
                 if matcher.is_complete() || self.events[matcher.index()].pitches.len() != 1 {
@@ -459,6 +505,7 @@ impl SessionEngine {
                 self.record_attempt(midi, event.staves[pos], !nailed_it, None);
             }
             self.record_interval_attempt(index, !nailed_it, None);
+            self.record_chord_shape_attempt(index, !nailed_it, None);
         }
         if nailed_it {
             {

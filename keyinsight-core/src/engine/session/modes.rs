@@ -8,7 +8,6 @@ use crate::engine::session::{
     PLAYBACK_PREVIEW_BPM,
 };
 use crate::audio::MidiFileEncoder;
-use crate::notation::NoteState;
 use crate::persistence::ExerciseRecord;
 use crate::score::{Exercise, FreePlayScore, MusicXmlEncoder, RepertoirePiece};
 
@@ -169,21 +168,6 @@ impl SessionEngine {
             .cloned();
     }
 
-    pub fn set_two_handed(&mut self, on: bool) {
-        if on == self.two_handed {
-            return;
-        }
-        self.two_handed = on;
-        let now = self.now_ms();
-        if let Some(db) = &mut self.db {
-            db.set_setting("two_handed", if on { "1" } else { "0" }, now);
-        }
-        // Only regenerate when it changes the next thing we'd show.
-        if self.active_piece.is_none() && self.drill_remaining.is_none() && !self.is_free_play {
-            self.next_exercise();
-        }
-    }
-
     // --- Beginner keys strip ---
 
     /// Settings key for the current context's override.
@@ -243,7 +227,7 @@ impl SessionEngine {
         self.matcher = None;
         self.tempo_matcher = None;
         self.render_free_play();
-        self.phase = Phase::Playing;
+        self.set_phase(Phase::Playing);
         agg_gui::animation::request_draw();
     }
 
@@ -308,9 +292,6 @@ impl SessionEngine {
         self.teardown_tempo_run();
         self.active_piece = None;
         self.is_free_play = false;
-        if self.mode == PacingMode::Tempo {
-            self.mode = PacingMode::SelfPaced;
-        }
         self.drill_remaining = Some(DRILL_LENGTH);
         self.drill_totals = DrillTotals::new();
         self.next_exercise();
@@ -324,7 +305,7 @@ impl SessionEngine {
         if self.exercise.is_none() || self.is_free_play {
             return false;
         }
-        !(self.phase == Phase::Playing && self.mode == PacingMode::Tempo)
+        !(self.phase == Phase::Playing && self.active_pacing == PacingMode::Tempo)
     }
 
     pub fn toggle_playback(&mut self) {
@@ -372,57 +353,5 @@ impl SessionEngine {
         self.notation.borrow_mut().cancel_follow();
         self.restore_note_states();
         agg_gui::animation::request_draw();
-    }
-
-    /// The state each note should show based on actual play progress.
-    fn natural_state(&self, index: usize) -> Option<NoteState> {
-        if let Some(matcher) = &self.matcher {
-            if matcher.is_complete() {
-                return Some(NoteState::Correct);
-            }
-            if index < matcher.index() {
-                return Some(NoteState::Correct);
-            }
-            return if index == matcher.index() {
-                Some(NoteState::Current)
-            } else {
-                None
-            };
-        }
-        if let Some(tempo_matcher) = &self.tempo_matcher {
-            use crate::engine::TempoResolution;
-            return match tempo_matcher.resolutions[index] {
-                Some(TempoResolution::Hit { .. }) => Some(NoteState::Correct),
-                Some(TempoResolution::Missed) => Some(NoteState::Missed),
-                Some(TempoResolution::Skipped) => Some(NoteState::Locked),
-                None => {
-                    if Some(index) == tempo_matcher.first_unresolved_index() {
-                        Some(NoteState::Current)
-                    } else {
-                        None
-                    }
-                }
-            };
-        }
-        None
-    }
-
-    fn restore_note_states(&mut self) {
-        let mut states: Vec<(String, Option<NoteState>)> = Vec::new();
-        for (index, ids) in self.event_ids.iter().enumerate() {
-            let base = self.natural_state(index);
-            for (pos, id) in ids.iter().enumerate() {
-                let state = if self.consumed_positions[index].contains(&pos) {
-                    Some(NoteState::Correct)
-                } else {
-                    base
-                };
-                states.push((id.clone(), state));
-            }
-        }
-        let mut notation = self.notation.borrow_mut();
-        for (id, state) in states {
-            notation.set_state(&id, state);
-        }
     }
 }

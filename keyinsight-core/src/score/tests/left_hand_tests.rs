@@ -71,11 +71,9 @@ fn bass_only_match_events_are_all_bass_staff() {
         .all(|e| e.staves.iter().all(|&s| s == Staff::Bass)));
 }
 
-/// Deferred to the notation step: the sibling `verovio-rust` importer
-/// (`src/import.rs`) accepts an F clef only on a two-staff part, so a
-/// single bass-clef staff fails to load. Un-ignore once it does.
+/// A single bass-clef staff engraves (the sibling `verovio-rust` importer
+/// accepts an F clef on a one-staff part) and its ids read in order.
 #[test]
-#[ignore]
 fn bass_only_renders_and_pitches_agree_per_id() {
     let mut renderer = NotationRenderer::new();
     let ex = generate_left(5, 2);

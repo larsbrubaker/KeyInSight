@@ -7,8 +7,11 @@
 //!
 //! Ports `Engine/SessionEngine.swift`, split into focused modules
 //! (the Swift file is ~1400 lines; the 800-line rule applies here):
-//! - `mod.rs` — state, types, construction, the frame tick
-//! - `lifecycle.rs` — start / next_exercise / binding / completion
+//! - `mod.rs` — state, types, construction
+//! - `lifecycle.rs` — start / user state / input source / the frame tick
+//! - `generation.rs` — next_exercise, hand selection, generator config
+//! - `binding.rs` — render→event binding, note-state painting
+//! - `completion.rs` — finish_exercise, unlocks, attempt recording
 //! - `input.rs` — event handling, matchers, feedback
 //! - `modes.rs` — free play, drills, repertoire, users, playback
 //! - `progress.rs` — progress report entries
@@ -20,7 +23,9 @@
 //! and the system RNG is a seeded SplitMix64 (deterministic across
 //! platforms).
 
+mod binding;
 mod completion;
+mod generation;
 mod lifecycle;
 mod input;
 mod modes;
@@ -35,15 +40,51 @@ use std::rc::Rc;
 
 use crate::audio::{AudioOut, Metronome};
 use crate::core::{InputBackend, NoteEvent, SplitMix64};
-use crate::engine::{OctaveAnchor, SelfPacedMatcher, TempoMatcher, TempoPolicy, TempoReport};
+use crate::engine::{
+    InputStormDetector, OctaveAnchor, SelfPacedMatcher, TempoMatcher, TempoPolicy, TempoReport,
+};
 use crate::input::{SimulatedKeyboardBackend, UnpluggedBackend};
 use crate::notation::{NotationController, NotationRenderer};
 use crate::persistence::{AppDatabase, UserProfile};
-use crate::score::{Exercise, ExerciseGenerator, MatchEvent, RepertoirePiece, ScoreNote};
+use crate::score::{Exercise, ExerciseGenerator, MatchEvent, RepertoirePiece, ScoreNote, Staff};
 use crate::skill::SkillModel;
 use crate::ui::KeyboardLayout;
 
-pub use progress::{IntervalEntry, ProgressEntry};
+pub use progress::{ChordEntry, IntervalEntry, ProgressEntry, TransitionEntry};
+
+/// Which hand(s) training exercises target. Auto rotates by weakness and
+/// mixes in two-hand exercises once the bass seed range is mastered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandMode {
+    Right,
+    Left,
+    Both,
+    Auto,
+}
+
+impl HandMode {
+    pub const ALL: [HandMode; 4] = [HandMode::Right, HandMode::Left, HandMode::Both, HandMode::Auto];
+
+    /// Swift raw value (the persisted `hand_mode` setting).
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            HandMode::Right => "Right",
+            HandMode::Left => "Left",
+            HandMode::Both => "Both",
+            HandMode::Auto => "Auto",
+        }
+    }
+
+    pub fn from_raw_value(raw: &str) -> Option<HandMode> {
+        match raw {
+            "Right" => Some(HandMode::Right),
+            "Left" => Some(HandMode::Left),
+            "Both" => Some(HandMode::Both),
+            "Auto" => Some(HandMode::Auto),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExerciseSummary {
@@ -194,6 +235,11 @@ pub struct SessionEngine {
     pub(crate) streak: i64,
     pub(crate) octave_offset: i32,
     pub(crate) mode: PacingMode,
+    /// The pacing actually running this exercise: `mode` is the user's
+    /// choice; content the tempo matcher can't score (chords, hands
+    /// together) and drills run self-paced without overwriting it, so
+    /// tempo survives Auto's mixed content.
+    pub(crate) active_pacing: PacingMode,
     /// Tempo mode: beats remaining in the count-in, None once running.
     pub(crate) count_in_remaining: Option<i32>,
     /// Tempo mode: beat index within the measure (drives the beat dots).
@@ -209,6 +255,10 @@ pub struct SessionEngine {
     pub(crate) last_free_play_note: Option<String>,
     /// Micro-drill: flash cards remaining, None = not drilling.
     pub(crate) drill_remaining: Option<i32>,
+    /// Mash guard: wrong-strike storms suspend attempt recording until a
+    /// clean event; the badge keeps it honest.
+    pub(crate) stats_suppressed: bool,
+    pub(crate) storm_detector: InputStormDetector,
     /// Clicked-notation explainer text (vocabulary popover).
     pub(crate) inspection: Option<String>,
     /// Reference-audio playback of the current exercise in progress.
@@ -233,9 +283,11 @@ pub struct SessionEngine {
     pub(crate) wrong_key_flash: Option<u8>,
     /// Keyboard strip range for the current content.
     pub(crate) keyboard_layout: KeyboardLayout,
-    /// Two-hand generated exercises (opt-in until bass skill items exist);
-    /// persists per user.
-    pub(crate) two_handed: bool,
+    /// Which hand(s) training exercises target; persists per user.
+    pub(crate) hand_mode: HandMode,
+    /// Octave-following scaffold (per user): the exercise follows the
+    /// octave the player starts in. Off = written octaves are required.
+    pub(crate) follow_octave: bool,
     pub(crate) anchored_octaves: i32,
 
     // --- Collaborators ---
@@ -244,6 +296,13 @@ pub struct SessionEngine {
     pub(crate) backend: Box<dyn InputBackend>,
     pub(crate) backend_factory: BackendFactory,
     pub skill: SkillModel,
+    /// Left-hand model: its own unlock ladder over the bass staff.
+    pub bass_skill: SkillModel,
+    /// Hold off display sleep while an exercise is running (the Swift
+    /// `DisplaySleepGuard` power assertion, driven by `phase`). Shells
+    /// install the platform call; `None` = no-op.
+    pub display_awake: Option<Box<dyn Fn(bool)>>,
+    pub(crate) display_awake_active: bool,
     pub(crate) metronome: Metronome,
     pub(crate) audio: Rc<dyn AudioOut>,
     /// Host-uptime seconds — the clock every NoteEvent carries.
@@ -265,6 +324,8 @@ pub struct SessionEngine {
     pub(crate) tempo_matcher: Option<TempoMatcher>,
     pub(crate) note_ids: Vec<String>,
     pub(crate) exercise_number: i64,
+    /// Consecutive clean self-paced training exercises (rhythm advancement).
+    pub(crate) rhythm_clean_streak: i32,
     pub(crate) count_in_beats: i32,
     pub(crate) input_latency_ms: f64,
     pub(crate) sweep_running: bool,
@@ -310,6 +371,8 @@ pub struct SessionEngine {
 
 pub const DRILL_LENGTH: i32 = 12;
 pub const PLAYBACK_PREVIEW_BPM: f64 = 90.0;
+/// Latencies past this are a break, not slowness (mastery robustness).
+pub const LATENCY_OUTLIER_MS: f64 = 15_000.0;
 /// MIDI mode auto-advances past the summary. Longer when an unlock
 /// deserves a look.
 pub const AUTO_ADVANCE_DELAY: f64 = 1.5;
@@ -337,6 +400,7 @@ impl SessionEngine {
             streak: 0,
             octave_offset: 0,
             mode: PacingMode::SelfPaced,
+            active_pacing: PacingMode::SelfPaced,
             count_in_remaining: None,
             beat_in_measure: 0,
             tempo_bpm: TempoPolicy::START_BPM,
@@ -347,6 +411,8 @@ impl SessionEngine {
             free_play_count: 0,
             last_free_play_note: None,
             drill_remaining: None,
+            stats_suppressed: false,
+            storm_detector: InputStormDetector::default(),
             inspection: None,
             is_playing_back: false,
             self_verify_attempts: 0,
@@ -361,13 +427,17 @@ impl SessionEngine {
             current_expected_midis: HashSet::new(),
             wrong_key_flash: None,
             keyboard_layout: KeyboardLayout::covering(48, 84),
-            two_handed: false,
+            hand_mode: HandMode::Right,
+            follow_octave: true,
             anchored_octaves: 0,
             notation,
             renderer,
             backend,
             backend_factory,
             skill: SkillModel::default(),
+            bass_skill: SkillModel::with_staff(Staff::Bass, crate::skill::SEED_COUNT),
+            display_awake: None,
+            display_awake_active: false,
             metronome: Metronome::new(Rc::clone(&audio)),
             audio,
             clock,
@@ -381,6 +451,7 @@ impl SessionEngine {
             tempo_matcher: None,
             note_ids: Vec::new(),
             exercise_number: 0,
+            rhythm_clean_streak: 0,
             count_in_beats: 4,
             input_latency_ms: 0.0,
             sweep_running: false,
@@ -437,6 +508,9 @@ impl SessionEngine {
     pub fn mode(&self) -> PacingMode {
         self.mode
     }
+    pub fn active_pacing(&self) -> PacingMode {
+        self.active_pacing
+    }
     pub fn count_in_remaining(&self) -> Option<i32> {
         self.count_in_remaining
     }
@@ -466,6 +540,9 @@ impl SessionEngine {
     }
     pub fn drill_remaining(&self) -> Option<i32> {
         self.drill_remaining
+    }
+    pub fn stats_suppressed(&self) -> bool {
+        self.stats_suppressed
     }
     pub fn inspection(&self) -> Option<&str> {
         self.inspection.as_deref()
@@ -541,8 +618,11 @@ impl SessionEngine {
     pub fn keyboard_layout(&self) -> &KeyboardLayout {
         &self.keyboard_layout
     }
-    pub fn two_handed(&self) -> bool {
-        self.two_handed
+    pub fn hand_mode(&self) -> HandMode {
+        self.hand_mode
+    }
+    pub fn follow_octave(&self) -> bool {
+        self.follow_octave
     }
     pub fn anchored_octaves(&self) -> i32 {
         self.anchored_octaves
@@ -552,6 +632,19 @@ impl SessionEngine {
     }
     pub fn exercise(&self) -> Option<&Exercise> {
         self.exercise.as_ref()
+    }
+
+    /// The one place `phase` changes (the Swift `didSet`): the display
+    /// sleep guard follows it — awake while playing, released otherwise.
+    pub(crate) fn set_phase(&mut self, phase: Phase) {
+        self.phase = phase;
+        let active = self.phase == Phase::Playing;
+        if active != self.display_awake_active {
+            self.display_awake_active = active;
+            if let Some(hook) = &self.display_awake {
+                hook(active);
+            }
+        }
     }
 
     /// Milliseconds timestamp for persistence, derived from the host clock

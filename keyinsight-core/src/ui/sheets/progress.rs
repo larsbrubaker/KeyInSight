@@ -72,12 +72,12 @@ fn build_content(
     // The Swift `onAppear` data load + heat staff render.
     let (entries, intervals, history, staff_controller) = {
         let mut engine = engine.borrow_mut();
-        let entries = engine.progress_entries();
+        let entries = engine.progress_entries(crate::score::Staff::Treble);
         let intervals = engine.interval_entries();
         let history = engine.recent_exercises(20);
         let renderer = Rc::new(std::cell::RefCell::new(NotationRenderer::new()));
         let controller = Rc::new(std::cell::RefCell::new(NotationController::new(renderer)));
-        engine.render_progress_staff(&mut controller.borrow_mut());
+        engine.render_progress_staff(&mut controller.borrow_mut(), crate::score::Staff::Treble);
         (entries, intervals, history, controller)
     };
 

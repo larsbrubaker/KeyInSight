@@ -2,6 +2,11 @@
 //! the scripted `--demo` DemoDriver rather than a unit suite; these tests
 //! cover the same journeys headlessly: play an adaptive exercise through
 //! the simulated backend, see feedback + summary + persistence.
+//! `hands` covers hand modes / pacing / progress; `robustness` the mastery
+//! guards, chord windows, and rhythm advancement.
+
+mod hands;
+mod robustness;
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -41,6 +46,28 @@ fn note_on(midi: u8, at: f64) -> NoteEvent {
         velocity: Some(80),
         timestamp: at,
         confidence: 1.0,
+    }
+}
+
+/// Play the current exercise cleanly to its summary: every expected
+/// pitch of each event (chords land together), 0.4 s apart.
+fn play_through(engine: &mut SessionEngine, time: &Rc<RefCell<f64>>) -> super::ExerciseSummary {
+    let mut guard = 0;
+    while *engine.phase() == Phase::Playing {
+        let mut midis: Vec<u8> = engine.current_expected_midis().iter().copied().collect();
+        midis.sort_unstable();
+        assert!(!midis.is_empty(), "a playing exercise always expects something");
+        *time.borrow_mut() += 0.4;
+        let at = *time.borrow();
+        for midi in midis {
+            engine.handle(note_on(midi, at));
+        }
+        guard += 1;
+        assert!(guard < 400, "exercise should complete");
+    }
+    match engine.phase() {
+        Phase::Summary(summary) => summary.clone(),
+        other => panic!("expected a summary, got {other:?}"),
     }
 }
 

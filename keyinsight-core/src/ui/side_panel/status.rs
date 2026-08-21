@@ -89,7 +89,7 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
                 .with_color(palette::ORANGE),
         );
     }
-    if engine.mode() == PacingMode::Tempo {
+    if engine.active_pacing() == PacingMode::Tempo {
         let bpm = format!("{} BPM", engine.tempo_bpm() as i64);
         if let Some(count_in) = engine.count_in_remaining() {
             rows.push(

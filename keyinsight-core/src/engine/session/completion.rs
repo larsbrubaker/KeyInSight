@@ -1,6 +1,6 @@
-//! Exercise completion: the end-of-exercise summary, skill/attempt
-//! recording, tempo-run teardown, and the auto-advance scheduling.
-//! (Split from `lifecycle.rs` to keep both under the file-size limit.)
+//! Exercise completion: the end-of-exercise summary, unlocks across both
+//! hands' models, skill/attempt recording, tempo-run teardown, and the
+//! auto-advance scheduling.
 
 use crate::core::{NoteEvent, PitchSpelling};
 use crate::engine::session::{
@@ -43,17 +43,7 @@ impl SessionEngine {
                 return;
             }
             self.drill_remaining = None;
-            self.refresh_skill();
-            let mut drill_unlock: Option<String> = None;
-            if let Some(new_midi) = self.skill.unlock_if_earned() {
-                drill_unlock = Some(PitchSpelling::name(new_midi));
-                let count = self.skill.unlocked_count() as i64;
-                let now = self.now_ms();
-                if let Some(db) = &mut self.db {
-                    db.set_unlocked_item_count(count, now);
-                }
-                self.refresh_skill();
-            }
+            let drill_unlock = self.unlock_earned_items();
             let totals = std::mem::replace(&mut self.drill_totals, DrillTotals::new());
             let mean_latency = if totals.latencies_ms.is_empty() {
                 None
@@ -61,7 +51,7 @@ impl SessionEngine {
                 Some(totals.latencies_ms.iter().sum::<f64>() / totals.latencies_ms.len() as f64)
             };
             let unlocked = drill_unlock.is_some();
-            self.phase = Phase::Summary(ExerciseSummary {
+            self.set_phase(Phase::Summary(ExerciseSummary {
                 exercise_number: self.exercise_number,
                 note_count: totals.notes,
                 first_try_correct: totals.first_try,
@@ -76,34 +66,24 @@ impl SessionEngine {
                 worst_measure: None,
                 drill: true,
                 self_verified: self.input_source == InputSource::SelfVerify,
-            });
+            }));
             self.schedule_auto_advance(unlocked);
             return;
         }
 
         // Skill model catch-up: stats changed during play; maybe unlock.
-        self.refresh_skill();
-        let mut unlocked_name: Option<String> = None;
-        if let Some(new_midi) = self.skill.unlock_if_earned() {
-            unlocked_name = Some(PitchSpelling::name(new_midi));
-            let count = self.skill.unlocked_count() as i64;
-            let now = self.now_ms();
-            if let Some(db) = &mut self.db {
-                db.set_unlocked_item_count(count, now);
-            }
-            self.refresh_skill();
-        }
+        let unlocked_name = self.unlock_earned_items();
 
         // Tempo + rhythm adaptive axes — training only; repertoire pieces
         // have fixed content and shouldn't move the training difficulty.
         let mut rhythm_unlocked_name: Option<String> = None;
-        let exercise_bpm = if self.mode == PacingMode::Tempo {
+        let exercise_bpm = if self.active_pacing == PacingMode::Tempo {
             Some(self.tempo_bpm)
         } else {
             None
         };
         if let Some(timing_report) = &timing_report {
-            if self.mode == PacingMode::Tempo && self.active_piece.is_none() {
+            if self.active_pacing == PacingMode::Tempo && self.active_piece.is_none() {
                 if RhythmPolicy::should_advance(self.rhythm_level, timing_report, self.tempo_bpm) {
                     self.rhythm_level += 1;
                     rhythm_unlocked_name =
@@ -122,6 +102,33 @@ impl SessionEngine {
                         db.set_setting("tempo_bpm", &new_bpm.to_string(), now);
                     }
                 }
+            }
+        }
+        // Self-paced play advances rhythm too (OQ-25): a streak of clean
+        // training exercises earns the next rung — tempo mode isn't the
+        // only path (Mic/Unplugged can't run it at all).
+        if self.active_pacing == PacingMode::SelfPaced && self.active_piece.is_none() {
+            self.rhythm_clean_streak = if self.errors_this_exercise == 0 {
+                self.rhythm_clean_streak + 1
+            } else {
+                0
+            };
+            if RhythmPolicy::should_advance_self_paced(self.rhythm_level, self.rhythm_clean_streak)
+            {
+                self.rhythm_level += 1;
+                rhythm_unlocked_name =
+                    RhythmPolicy::unlock_name(self.rhythm_level).map(str::to_string);
+                self.rhythm_clean_streak = 0;
+                let level = self.rhythm_level.to_string();
+                let now = self.now_ms();
+                if let Some(db) = &mut self.db {
+                    db.set_setting("rhythm_level", &level, now);
+                }
+            }
+            let streak = self.rhythm_clean_streak.to_string();
+            let now = self.now_ms();
+            if let Some(db) = &mut self.db {
+                db.set_setting("rhythm_clean_streak", &streak, now);
             }
         }
 
@@ -166,7 +173,7 @@ impl SessionEngine {
         }
 
         let unlocked = unlocked_name.is_some() || rhythm_unlocked_name.is_some();
-        self.phase = Phase::Summary(ExerciseSummary {
+        self.set_phase(Phase::Summary(ExerciseSummary {
             exercise_number: self.exercise_number,
             note_count: self.note_count,
             first_try_correct: self.first_try_correct,
@@ -185,7 +192,7 @@ impl SessionEngine {
             worst_measure,
             drill: false,
             self_verified: self.input_source == InputSource::SelfVerify,
-        });
+        }));
         self.schedule_auto_advance(unlocked);
         agg_gui::animation::request_draw();
     }
@@ -213,6 +220,7 @@ impl SessionEngine {
         self.tempo_finish_scheduled = false;
     }
 
+    /// Loads stats once and refreshes BOTH hands' models.
     pub(crate) fn refresh_skill(&mut self) {
         let stats = self
             .db
@@ -220,6 +228,56 @@ impl SessionEngine {
             .map(|db| db.item_stats())
             .unwrap_or_default();
         self.skill.refresh(&stats);
+        self.bass_skill.refresh(&stats);
+    }
+
+    /// Unlock check across both hands' models (each unlocks only from its
+    /// own staff's mastery) plus the interval and chord ladders. Returns
+    /// the display name(s) for the summary.
+    pub(crate) fn unlock_earned_items(&mut self) -> Option<String> {
+        self.refresh_skill();
+        let mut names: Vec<String> = Vec::new();
+        if let Some(midi) = self.skill.unlock_if_earned() {
+            names.push(PitchSpelling::name(midi));
+            let count = self.skill.unlocked_count() as i64;
+            let now = self.now_ms();
+            if let Some(db) = &mut self.db {
+                db.set_unlocked_item_count(count, now);
+            }
+        }
+        if let Some(midi) = self.bass_skill.unlock_if_earned() {
+            names.push(format!("{} (left hand)", PitchSpelling::name(midi)));
+            let count = self.bass_skill.unlocked_count().to_string();
+            let now = self.now_ms();
+            if let Some(db) = &mut self.db {
+                db.set_setting("bass_unlocked_count", &count, now);
+            }
+        }
+        // Ladder rungs earned through readiness probes (OQ-25).
+        if let Some(size) = self.skill.unlock_interval_if_ready() {
+            names.push(format!(
+                "{} leaps",
+                SkillModel::interval_size_display_name(size)
+            ));
+            let count = self.skill.interval_unlocked_count().to_string();
+            let now = self.now_ms();
+            if let Some(db) = &mut self.db {
+                db.set_setting("interval_unlocked_count", &count, now);
+            }
+        }
+        if let Some(shape) = self.skill.unlock_chord_if_ready() {
+            names.push(SkillModel::chord_shape_display_name(shape));
+            let count = self.skill.chord_unlocked_count().to_string();
+            let now = self.now_ms();
+            if let Some(db) = &mut self.db {
+                db.set_setting("chord_unlocked_count", &count, now);
+            }
+        }
+        if names.is_empty() {
+            return None;
+        }
+        self.refresh_skill();
+        Some(names.join(" · "))
     }
 
     pub(crate) fn record_attempt(
@@ -229,6 +287,9 @@ impl SessionEngine {
         was_error: bool,
         latency_ms: Option<f64>,
     ) {
+        if self.stats_suppressed {
+            return;
+        }
         let now = self.now_ms();
         if let Some(db) = &mut self.db {
             db.record_item_attempt(
@@ -237,6 +298,26 @@ impl SessionEngine {
                 latency_ms,
                 now,
             );
+        }
+    }
+
+    /// Chord shape-classes (OQ-23): a completed multi-pitch event records
+    /// its shape item ("chord:harm-5th") — one attempt per struck chord.
+    pub(crate) fn record_chord_shape_attempt(
+        &mut self,
+        index: usize,
+        was_error: bool,
+        latency_ms: Option<f64>,
+    ) {
+        if self.stats_suppressed || self.events[index].pitches.len() <= 1 {
+            return;
+        }
+        let Some(shape) = SkillModel::chord_shape_name(&self.events[index].pitches) else {
+            return;
+        };
+        let now = self.now_ms();
+        if let Some(db) = &mut self.db {
+            db.record_item_attempt(shape, was_error, latency_ms, now);
         }
     }
 
@@ -249,20 +330,33 @@ impl SessionEngine {
         was_error: bool,
         latency_ms: Option<f64>,
     ) {
-        if index == 0
+        if self.stats_suppressed
+            || index == 0
             || self.events[index].pitches.len() != 1
             || self.events[index - 1].pitches.len() != 1
         {
             return;
         }
-        let delta = PitchSpelling::diatonic_index(self.events[index].pitches[0])
-            - PitchSpelling::diatonic_index(self.events[index - 1].pitches[0]);
+        let from = self.events[index - 1].pitches[0];
+        let to = self.events[index].pitches[0];
+        let now = self.now_ms();
+        // The specific transition always records (trouble-spot report);
+        // big repertoire leaps still count here even when no interval
+        // shape tracks them.
+        if let Some(db) = &mut self.db {
+            db.record_item_attempt(
+                &SkillModel::transition_item_name(from, to),
+                was_error,
+                latency_ms,
+                now,
+            );
+        }
+        let delta = PitchSpelling::diatonic_index(to) - PitchSpelling::diatonic_index(from);
         // Repertoire can leap arbitrarily; only the tracked shapes count.
         let max_delta = *crate::skill::INTERVAL_DELTAS.iter().max().unwrap();
         if delta.abs() > max_delta {
             return;
         }
-        let now = self.now_ms();
         if let Some(db) = &mut self.db {
             db.record_item_attempt(
                 &SkillModel::interval_item_name(delta),

@@ -20,7 +20,7 @@ use agg_gui::widgets::{
     Button, Conditional, Container, FlexColumn, FlexRow, Label, Separator, Spacer, ToggleSwitch,
 };
 
-use crate::engine::{InputSource, PacingMode, Phase, SessionEngine};
+use crate::engine::{HandMode, InputSource, PacingMode, Phase, SessionEngine};
 use crate::ui::fonts::{icon, size, UiFonts};
 use crate::ui::{palette, DynamicLabel, InfoRows, LevelMeter};
 
@@ -182,14 +182,14 @@ fn instruction_text(engine: &SessionEngine) -> String {
         InputSource::SelfVerify => "Play the phrase on your instrument. Use Hear It to compare, then grade yourself honestly — repeated passes still count as practice.".to_string(),
         InputSource::Microphone => "Play single notes on your instrument near the mic. The meter below shows what it hears; uncertain notes are never marked wrong.".to_string(),
         InputSource::Midi => {
-            if engine.mode() == PacingMode::Tempo {
+            if engine.active_pacing() == PacingMode::Tempo {
                 "Wait for the count-in, then play with the clicks. ◀ early · ▶ late · amber = missed.".to_string()
             } else {
                 "Play the blue note on your keyboard; the cursor waits for you. Hover over any symbol to learn its name.".to_string()
             }
         }
         InputSource::Keyboard => {
-            if engine.mode() == PacingMode::Tempo {
+            if engine.active_pacing() == PacingMode::Tempo {
                 "Wait for the count-in, then play with the clicks. ◀ early · ▶ late · amber = missed. A S D F G H J K = C–C, W E T Y U = sharps.".to_string()
             } else {
                 "Play the blue note; the cursor waits for you. A S D F G H J K = C–C, W E T Y U = sharps, Z/X shift octave. Hover over any symbol to learn its name.".to_string()
@@ -419,16 +419,24 @@ fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelCells) -> Fl
     column = column.add(Box::new(pacing_row));
 
     // Two-hand training exercises (hidden in repertoire, like Swift).
+    // Interim shim over the engine's hand modes: on = Both, off = Right
+    // (the full Hands picker replaces this row with the side-panel port).
     {
         let visible = training_cell(engine);
-        let state = engine_state_cell(engine, |e| e.two_handed());
+        let state = engine_state_cell(engine, |e| e.hand_mode() == HandMode::Both);
         let click = Rc::clone(engine);
         let row = toggle_row(
             "Two hands",
             fonts,
-            ToggleSwitch::new(engine.borrow().two_handed())
+            ToggleSwitch::new(engine.borrow().hand_mode() == HandMode::Both)
                 .with_state_cell(state)
-                .on_change(move |on| click.borrow_mut().set_two_handed(on)),
+                .on_change(move |on| {
+                    click.borrow_mut().set_hand_mode(if on {
+                        HandMode::Both
+                    } else {
+                        HandMode::Right
+                    })
+                }),
         );
         column = column.add(Box::new(Conditional::new(visible, Box::new(row))));
     }
@@ -597,7 +605,7 @@ fn mic_cell(engine: &Engine) -> Rc<Cell<bool>> {
 }
 
 fn tempo_cell(engine: &Engine) -> Rc<Cell<bool>> {
-    engine_state_cell(engine, |e| e.mode() == PacingMode::Tempo)
+    engine_state_cell(engine, |e| e.active_pacing() == PacingMode::Tempo)
 }
 
 fn training_cell(engine: &Engine) -> Rc<Cell<bool>> {

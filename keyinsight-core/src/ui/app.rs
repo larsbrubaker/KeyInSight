@@ -228,6 +228,13 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
         now_ms as u64,
     )));
 
+    // Display sleep guard: the platform power assertion follows `phase`.
+    {
+        let platform_for_awake = Rc::clone(&platform);
+        engine.borrow_mut().display_awake =
+            Some(Box::new(move |active| platform_for_awake.set_display_awake(active)));
+    }
+
     // Vocabulary hover: notation → engine.
     {
         let engine_for_inspect = Rc::clone(&engine);
