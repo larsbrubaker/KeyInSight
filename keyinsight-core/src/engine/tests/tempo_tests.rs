@@ -170,6 +170,34 @@ fn start_index_skips_earlier_events() {
     assert_eq!(m.report().expected_count, 0);
 }
 
+// `LeftHandTests.swift` PartialReplayTests.tempoMatcherSkipsResolvedPrefix.
+#[test]
+fn tempo_matcher_skips_resolved_prefix() {
+    // Targets as if starting at index 2 of a quarter grid: earlier
+    // targets sit in negative time.
+    let expected: Vec<TempoExpected> = [(60u8, -1000.0), (62, -500.0), (64, 1000.0), (65, 1500.0)]
+        .iter()
+        .map(|&(midi, target_ms)| TempoExpected { midi, target_ms })
+        .collect();
+    let mut m = TempoMatcher::with_start_index(expected, 2);
+    assert_eq!(m.first_unresolved_index(), Some(2));
+    // The sweep never marks the skipped prefix as missed.
+    assert!(m.sweep(900.0).is_empty());
+    assert_eq!(
+        m.consume_note_on(64, 1010.0),
+        hit(2, Timing::OnTime, 10.0, false)
+    );
+    assert_eq!(
+        m.consume_note_on(65, 1500.0),
+        hit(3, Timing::OnTime, 0.0, true)
+    );
+    // Report covers only the played region.
+    let report = m.report();
+    assert_eq!(report.expected_count, 2);
+    assert_eq!(report.on_time, 2);
+    assert_eq!(report.hit_rate(), 1.0);
+}
+
 // --- TempoPolicyTests ---
 
 fn report(hit_rate: f64, missed: usize) -> TempoReport {

@@ -79,7 +79,7 @@ fn new_library_batch_loads() {
     let canon = piece(&pieces, "canon-in-d-two-hands");
     assert_eq!(canon.exercise.fifths, 2);
     assert_eq!(canon.exercise.bass_notes[0].midi, Some(50)); // D3
-                                                             // Amazing Grace: rest-padded pickup — play starts on the G3 upbeat.
+    // Amazing Grace: rest-padded pickup — play starts on the G3 upbeat.
     let grace = piece(&pieces, "amazing-grace");
     assert!(grace.exercise.notes[0].is_rest());
     assert_eq!(grace.exercise.sounded_notes()[0].midi, Some(55));

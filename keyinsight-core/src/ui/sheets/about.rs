@@ -28,14 +28,16 @@ const SHEET_SIZE: Size = Size {
 pub(crate) enum Block {
     /// `term(name, body)` — bold name over a secondary body.
     Term(&'static str, &'static str),
-    /// A bare `Text` in the section (callout secondary).
+    /// A bare `Text` in the section styled `.callout` + `.secondary`.
     Paragraph(&'static str),
+    /// A bare, unstyled `Text` — body font, primary color.
+    Body(&'static str),
 }
 
 pub(crate) const SECTIONS: &[(&str, &[Block])] = &[
     (
         "The model",
-        &[Block::Paragraph(
+        &[Block::Body(
             "KeyInSight works like a typing tutor for the staff: your skills are tracked as small items, exercises are generated at your current frontier with your weak items resurfaced, and new material unlocks itself when what's active is mastered — accuracy and speed, measured continuously. You never pick a level.",
         )],
     ),
@@ -154,6 +156,13 @@ fn section(fonts: &UiFonts, title: &str, blocks: &[Block]) -> FlexColumn {
         match block {
             Block::Term(name, body) => column = column.add(Box::new(term(fonts, name, body))),
             Block::Paragraph(text) => column = column.add(Box::new(paragraph(fonts, text))),
+            Block::Body(text) => {
+                column = column.add(Box::new(
+                    Label::new(*text, Arc::clone(&fonts.regular))
+                        .with_font_size(size::BODY)
+                        .with_wrap(true),
+                ))
+            }
         }
     }
     column
@@ -200,7 +209,7 @@ mod tests {
             for block in *blocks {
                 let (name, body) = match block {
                     Block::Term(name, body) => (*name, *body),
-                    Block::Paragraph(text) => ("", *text),
+                    Block::Paragraph(text) | Block::Body(text) => ("", *text),
                 };
                 assert!(!name.contains('*') && !body.contains('*'), "markdown left in {name:?}");
                 assert!(!body.contains("  "), "line-continuation double space in {name:?}");
@@ -211,12 +220,15 @@ mod tests {
             .iter()
             .filter_map(|b| match b {
                 Block::Term(name, _) => Some(*name),
-                Block::Paragraph(_) => None,
+                Block::Paragraph(_) | Block::Body(_) => None,
             })
             .collect();
         assert_eq!(
             modes,
             ["Training", "Drill", "Survival", "Tempo pacing", "Free Play", "Library"]
         );
+        // "The model" is plain body text; the skills coda is the callout.
+        assert!(matches!(SECTIONS[0].1, [Block::Body(_)]));
+        assert!(matches!(SECTIONS[1].1.last(), Some(Block::Paragraph(_))));
     }
 }

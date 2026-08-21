@@ -52,10 +52,14 @@ struct Filter {
     field_generation: Rc<Cell<u64>>,
     /// `songs.count` from the last list build, for the footer.
     shown: Rc<Cell<usize>>,
+    /// `SidePanelCells::library_generation`: bumped by every open of the
+    /// sheet so the rows' baked-in stats lines are rebuilt (SwiftUI
+    /// re-evaluates the body on appear).
+    open_generation: Rc<Cell<u64>>,
 }
 
 impl Filter {
-    fn new() -> Self {
+    fn new(open_generation: Rc<Cell<u64>>) -> Self {
         Self {
             search: Rc::new(RefCell::new(String::new())),
             hands: Rc::new(Cell::new(HandsFilter::All)),
@@ -63,12 +67,18 @@ impl Filter {
             list_generation: Rc::new(Cell::new(0)),
             field_generation: Rc::new(Cell::new(0)),
             shown: Rc::new(Cell::new(0)),
+            open_generation,
         }
     }
 
     fn changed(&self) {
         self.list_generation.set(self.list_generation.get() + 1);
         agg_gui::animation::request_draw();
+    }
+
+    /// The list Rebuilder's key: a filter change or a (re)open rebuilds.
+    fn list_key(&self) -> u64 {
+        self.list_generation.get() + self.open_generation.get()
     }
 }
 
@@ -80,7 +90,7 @@ pub fn build_library_sheet(
 ) -> Box<dyn Widget> {
     let visible = Rc::clone(&cells.show_library);
     let import_error: Rc<RefCell<String>> = Rc::new(RefCell::new(String::new()));
-    let filter = Rc::new(Filter::new());
+    let filter = Rc::new(Filter::new(Rc::clone(&cells.library_generation)));
     let all_songs: Rc<Vec<SongEntry>> = Rc::new(model::all_songs(&RepertoireLibrary::bundled()));
 
     let mut column = FlexColumn::new().with_gap(0.0);
@@ -121,14 +131,14 @@ pub fn build_library_sheet(
 
     // The song list (or the empty state), rebuilt on every filter change.
     {
-        let version = Rc::clone(&filter.list_generation);
+        let key_filter = Rc::clone(&filter);
         let build_engine = Rc::clone(engine);
         let build_fonts = fonts.clone();
         let build_visible = Rc::clone(&visible);
         let build_filter = Rc::clone(&filter);
         let build_songs = Rc::clone(&all_songs);
         let list = Rebuilder::new(
-            move || version.get(),
+            move || key_filter.list_key(),
             move || {
                 song_list(
                     &build_engine,
@@ -460,4 +470,25 @@ fn play_button(
                 agg_gui::animation::request_draw();
             }),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cell, Filter, Rc};
+
+    /// Opening the sheet rebuilds the list (fresh stats lines), as does a
+    /// filter change.
+    #[test]
+    fn list_key_changes_on_open_and_on_filter_change() {
+        let opens = Rc::new(Cell::new(0));
+        let filter = Filter::new(Rc::clone(&opens));
+        assert_eq!(filter.list_key(), 0);
+        opens.set(1); // the Library button / `open_library`
+        assert_eq!(filter.list_key(), 1);
+        assert_eq!(filter.list_key(), 1);
+        filter.list_generation.set(filter.list_generation.get() + 1);
+        assert_eq!(filter.list_key(), 2);
+        opens.set(2);
+        assert_eq!(filter.list_key(), 3);
+    }
 }

@@ -139,6 +139,8 @@ pub fn base_title(title: &str) -> String {
 }
 
 /// Stats for the most-played edition of the song: `(plays, bestAccuracy)`.
+/// Swift's `all.max { $0.plays < $1.plays }` keeps the first element on a
+/// tie, so the base edition wins equal play counts.
 pub fn best_stats(
     entry: &SongEntry,
     piece_stats: impl Fn(&str) -> Option<(i64, f64)>,
@@ -147,7 +149,10 @@ pub fn best_stats(
         .into_iter()
         .flatten()
         .filter_map(|piece| piece_stats(&piece.slug))
-        .max_by_key(|stats| stats.0)
+        .fold(None, |best: Option<(i64, f64)>, stats| match best {
+            Some(best) if best.0 >= stats.0 => Some(best),
+            _ => Some(stats),
+        })
 }
 
 /// `"\(plays)× · best \(Int((bestAccuracy * 100).rounded()))%"`.
@@ -291,6 +296,14 @@ mod tests {
         assert_eq!(stats, Some((5, 0.9)));
         assert_eq!(best_stats(ode, |_| None), None);
         assert_eq!(stats_line(5, 0.876), "5× · best 88%");
+        // Equal plays: the base edition (first) wins, as Swift's `max(by:)`.
+        let tied = best_stats(ode, |slug| match slug {
+            "ode-to-joy" => Some((3, 0.6)),
+            "ode-to-joy-two-hands" => Some((3, 0.95)),
+            _ => None,
+        })
+        .unwrap();
+        assert_eq!(stats_line(tied.0, tied.1), "3× · best 60%");
     }
 
     #[test]

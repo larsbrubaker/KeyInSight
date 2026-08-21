@@ -174,6 +174,47 @@ fn follow_top_slides_later_systems_to_the_anchor() {
     assert!(controller.take_pending_visible().is_none());
 }
 
+/// A ledger note high above a later system's top line still belongs to
+/// that system (its stem reaches down to the staff), not to the system
+/// above whose below-ledger room it overlaps.
+#[test]
+fn follow_top_attributes_high_ledger_notes_to_their_own_system() {
+    use crate::score::{NoteDuration, ScoreNote};
+    let renderer = Rc::new(RefCell::new(NotationRenderer::new()));
+    // Two measures, one per system; the second opens on B6 — five staff
+    // spaces above the treble staff.
+    let mut notes: Vec<ScoreNote> = [60u8, 62, 64, 65]
+        .iter()
+        .map(|&m| ScoreNote::note(m, NoteDuration::Quarter))
+        .collect();
+    notes.push(ScoreNote::note(95, NoteDuration::Quarter));
+    notes.extend([60u8, 62, 64].iter().map(|&m| ScoreNote::note(m, NoteDuration::Quarter)));
+    let ex = Exercise::new(notes, 4);
+    let xml = MusicXmlEncoder::encode_with_breaks(&ex, Some(1));
+    let rendered = renderer
+        .borrow_mut()
+        .render_with(&xml, true)
+        .expect("feed render");
+    let (first, high, top0, top1) = {
+        let renderer = renderer.borrow();
+        let layout = renderer.toolkit().current_layout().expect("layout");
+        assert_eq!(layout.systems.len(), 2);
+        let (top0, top1) = (layout.systems[0].staff_top, layout.systems[1].staff_top);
+        let high = rendered.note_ids[4].clone();
+        let &(_, y_top, _, h) = &layout.bounds_by_id[&high];
+        // Sanity: the notehead sits more than four staff spaces above the
+        // second system's top line — above any fixed ledger-room margin.
+        assert!(y_top + h / 2.0 < top1 - 40.0, "B6 at {} vs top {top1}", y_top + h / 2.0);
+        (rendered.note_ids[0].clone(), high, top0, top1)
+    };
+    let mut controller = NotationController::new(renderer);
+    controller.set_follow_top(true);
+    controller.ensure_visible(&first, 1.0, 0.0);
+    assert_eq!(controller.slide_offset(), 0.0);
+    controller.ensure_visible(&high, 1.0, 1.0);
+    assert_eq!(controller.slide_offset(), -(top1 - top0).round());
+}
+
 #[test]
 fn follow_top_off_keeps_the_score_still() {
     let (mut controller, [(first, _), (second, _)]) = two_system_score();

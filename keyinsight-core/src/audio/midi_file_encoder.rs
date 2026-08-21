@@ -116,7 +116,9 @@ impl MidiFileEncoder {
         track.extend_from_slice(&[0x00, 0xC0, program]);
         let mut last_tick = 0;
         for (event_tick, bytes) in &events {
-            track.extend(Self::variable_length((event_tick - last_tick) as usize));
+            // A note captured before the take's zero (negative start) must
+            // not wrap the delta: clamp like `encode`.
+            track.extend(Self::variable_length((event_tick - last_tick).max(0) as usize));
             track.extend_from_slice(bytes);
             last_tick = *event_tick;
         }

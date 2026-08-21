@@ -444,8 +444,9 @@ fn unexplained_attack_reports_uncertain_not_wrong() {
     );
 }
 
-// --- Free-play recording encoder (no Swift test; behavior from
-// MIDIFileEncoder.swift `encode(recording:)`) ---
+// --- Free-play recording encoder (`LeftHandTests.swift`
+// FreePlayRecordingTests; byte-level details from MIDIFileEncoder.swift
+// `encode(recording:)`) ---
 
 fn recorded(midi: u8, start_seconds: f64, duration_seconds: f64) -> RecordedNote {
     RecordedNote {
@@ -502,6 +503,19 @@ fn recording_notes_last_at_least_one_tick() {
     // On at tick 120 (0x78), off one tick later.
     assert_eq!(&track[0..4], [0x78, 0x90, 64, 80]);
     assert_eq!(&track[4..8], [0x01, 0x80, 64, 64]);
+}
+
+#[test]
+fn recording_negative_start_clamps_the_delta() {
+    // A note captured before the take's zero: its delta clamps to 0 rather
+    // than wrapping into a huge VLQ.
+    let bytes = MidiFileEncoder::encode_recording(&[recorded(60, -0.5, 1.0)], 0);
+    let track = &bytes[32..];
+    assert_eq!(&track[0..4], [0x00, 0x90, 60, 80]);
+    // Off at tick 240 (-240 + 480): delta 480 from the on at -240.
+    assert_eq!(&track[4..9], [0x83, 0x60, 0x80, 60, 64]);
+    assert_eq!(&track[9..], [0x00, 0xFF, 0x2F, 0x00]);
+    assert_eq!(parse_smf(&bytes).unwrap().len(), 1);
 }
 
 #[test]

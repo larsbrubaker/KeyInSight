@@ -76,11 +76,15 @@ pub struct KeyInSightHandles {
     pub engine: Rc<RefCell<SessionEngine>>,
     /// The Library sheet's visibility cell (the `--library` dev launch hook).
     show_library: Rc<std::cell::Cell<bool>>,
+    /// Bumped per open so the sheet's rows re-read their play stats.
+    library_generation: Rc<std::cell::Cell<u64>>,
 }
 
 impl KeyInSightHandles {
     /// Open the Library sheet (the Swift `--library` launch hook).
     pub fn open_library(&self) {
+        self.library_generation
+            .set(self.library_generation.get() + 1);
         side_panel::open_cell(&self.show_library);
     }
 
@@ -326,6 +330,7 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
         KeyInSightHandles {
             engine,
             show_library: Rc::clone(&cells.show_library),
+            library_generation: Rc::clone(&cells.library_generation),
         },
     )
 }

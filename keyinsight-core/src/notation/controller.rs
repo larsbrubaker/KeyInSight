@@ -12,6 +12,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use verovio_rust::{ElementKind, Primitive};
+
 use crate::notation::slide::SlideLane;
 use crate::notation::{NotationRenderer, Rendered};
 
@@ -269,22 +271,50 @@ impl NotationController {
         }
     }
 
-    /// The system a note sits on and its top staff line's layout y: the
-    /// last system whose staff top is above the notehead, allowing ledger
-    /// room over the staff (the page walked up to the `g.system` ancestor).
+    /// The system a note sits on and its top staff line's layout y (the
+    /// page walked up to the `g.system` ancestor): the system whose staff
+    /// lines are nearest the note's ink — notehead plus stem, so a high
+    /// ledger note still belongs to the staff its stem reaches for — which
+    /// puts the boundary between two systems at the midpoint of the gap
+    /// between them.
     fn system_of(&self, id: &str) -> Option<(usize, f64)> {
         let renderer = self.renderer.borrow();
         let layout = renderer.toolkit().current_layout()?;
         let &(_, y_top, _, h) = layout.bounds_by_id.get(id)?;
+        let systems = &layout.systems;
+        // The note's ink: the notehead's centre (its glyph box is an em
+        // square, too loose to measure with) stretched along its stem.
         let cy = y_top + h / 2.0;
-        const LEDGER_ROOM: f64 = 40.0; // four staff spaces above the top line
-        layout
-            .systems
+        let (ink_top, ink_bottom) = layout
+            .elements
             .iter()
-            .rev()
-            .find(|system| system.staff_top - LEDGER_ROOM <= cy)
-            .or(layout.systems.first())
-            .map(|system| (system.index, system.staff_top))
+            .filter(|element| {
+                element.kind == ElementKind::Stem && element.id.as_deref() == Some(id)
+            })
+            .fold((cy, cy), |(top, bottom), element| {
+                let (_, y, _, h) = element.bounds;
+                (top.min(y), bottom.max(y + h))
+            });
+        // Each system's lowest staff line (a grand staff reaches down to the
+        // bass staff), attributed by the system the line falls under.
+        let mut bottoms: Vec<f64> = systems.iter().map(|system| system.staff_top).collect();
+        for element in layout.elements.iter().filter(|e| e.kind == ElementKind::StaffLine) {
+            let Primitive::Line { y1: y, .. } = element.primitive else {
+                continue;
+            };
+            if let Some(system) = systems.iter().rev().find(|system| system.staff_top <= y) {
+                bottoms[system.index] = bottoms[system.index].max(y);
+            }
+        }
+        systems
+            .iter()
+            .zip(&bottoms)
+            .map(|(system, &bottom)| {
+                let gap = (system.staff_top - ink_bottom).max(ink_top - bottom).max(0.0);
+                (system, gap)
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map(|(system, _)| (system.index, system.staff_top))
     }
 
     /// The settled slide target (`slideOffset`, whole px; negative = up).

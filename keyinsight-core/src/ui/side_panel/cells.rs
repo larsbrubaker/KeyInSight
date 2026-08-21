@@ -54,9 +54,14 @@ pub fn drill_self_verify_cell(engine: &Engine) -> Rc<Cell<bool>> {
     })
 }
 
-/// `.playing where isSurvival` — the End Run button.
+/// `.playing where isSurvival` — the End Run button (the Swift switch puts
+/// the self-verify case first, so self-verify wins that state).
 pub fn survival_playing_cell(engine: &Engine) -> Rc<Cell<bool>> {
-    engine_state_cell(engine, |e| e.is_survival() && *e.phase() == Phase::Playing)
+    engine_state_cell(engine, |e| {
+        e.is_survival()
+            && *e.phase() == Phase::Playing
+            && e.input_source() != InputSource::SelfVerify
+    })
 }
 
 /// `.playing where drillActive` — the End Drill button (the self-verify

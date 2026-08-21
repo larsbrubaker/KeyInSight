@@ -17,12 +17,16 @@ pub(super) fn footer_buttons(engine: &Engine, fonts: &UiFonts, cells: &SidePanel
     let mut row = FlexRow::new().with_gap(8.0);
     {
         let show_library = Rc::clone(&cells.show_library);
+        let generation = Rc::clone(&cells.library_generation);
         row = row.add_flex(
             Box::new(
                 Button::new("Library", Arc::clone(&fonts.regular))
                     .with_subtle().with_active_fn(|| false)
                     .with_icon(icon::BOOKS, Arc::clone(&fonts.icons))
-                    .on_click(move || open_cell(&show_library)),
+                    .on_click(move || {
+                        generation.set(generation.get() + 1);
+                        open_cell(&show_library);
+                    }),
             ),
             1.0,
         );

@@ -71,7 +71,8 @@ fn empty_exercise_is_immediately_complete() {
     assert_eq!(matcher.consume_note_on(60), SelfPacedOutcome::Ignored);
 }
 
-// --- Chord window (no Swift test; behavior from Matcher.swift) ---
+// --- Chord window (`LeftHandTests.swift` SynchronousChordTests; the
+// window-edge and re-strike details follow Matcher.swift) ---
 
 #[test]
 fn late_chord_member_restarts_the_attempt() {

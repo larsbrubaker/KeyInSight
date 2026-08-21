@@ -15,7 +15,7 @@ source (see `docs/porting.md`).
 | SoundpipeAudioKit PitchTap | Goertzel bank over the exercise's candidate notes (`audio::goertzel`, chord-capable, noise-robust); mic capture behind `KeyInSightPlatform::mic` (cpal / getUserMedia). The ported `YinPitchDetector` remains for monophonic pitch tracking. |
 | GRDB / SQLite | Storage trait in core (load/save serialized state); native = file-backed, WASM = localStorage/IndexedDB. Port the `AppDatabase` schema semantics (skill stats, session history, settings, library) even though the storage engine differs. |
 | MusicXML via Verovio | Port `MusicXMLImporter`/`MusicXMLEncoder` directly (plain XML processing); use `quick-xml` |
-| IOKit power assertions (`IOPMAssertionCreateWithName` / `IOPMAssertionDeclareUserActivity`, `DisplaySleepGuard.swift`) | `KeyInSightPlatform::set_display_awake` — `keepawake` on native (Windows/macOS/Linux), Screen Wake Lock on WASM (not yet wired; default no-op), no-op headless |
+| IOKit power assertions (`IOPMAssertionCreateWithName` / `IOPMAssertionDeclareUserActivity`, `DisplaySleepGuard.swift`) | `KeyInSightPlatform::set_display_awake` — `keepawake` on native (Windows/macOS/Linux), Screen Wake Lock on WASM (not yet wired; default no-op), no-op headless. Known gap: the Swift guard also calls `IOPMAssertionDeclareUserActivity` on release so the idle clock restarts when an exercise ends; the native shim only drops the `keepawake` handle, so the display may dim sooner after an exercise on macOS than it did in the Swift app. |
 
 Notes:
 

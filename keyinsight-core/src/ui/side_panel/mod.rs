@@ -63,6 +63,9 @@ pub struct SidePanelCells {
     /// Bumped on every Progress open so the sheet re-queries the engine
     /// (the SwiftUI `onAppear` reload).
     pub progress_generation: Rc<Cell<u64>>,
+    /// Bumped on every Library open so the song rows re-read their play
+    /// stats (the SwiftUI body re-evaluates on appear).
+    pub library_generation: Rc<Cell<u64>>,
 }
 
 impl SidePanelCells {
@@ -78,6 +81,7 @@ impl SidePanelCells {
             player_name: Rc::new(RefCell::new(String::new())),
             dialog_generation: Rc::new(Cell::new(0)),
             progress_generation: Rc::new(Cell::new(0)),
+            library_generation: Rc::new(Cell::new(0)),
         }
     }
 }
