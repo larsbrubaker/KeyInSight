@@ -26,7 +26,13 @@ const EXCLUDED_DIRS: &[&str] = &[
     "demo/node_modules",
     "demo/dist",
     "demo/public/pkg",
+    // Verovio reference harness: npm install + regenerable render output.
+    "tools/reference-harness/node_modules",
+    "tools/reference-harness/out",
 ];
+
+/// Individual generated files that are not ours to police.
+const EXCLUDED_FILES: &[&str] = &["tools/reference-harness/package-lock.json"];
 
 const CHECKED_EXTENSIONS: &[&str] = &[
     "css", "html", "js", "json", "md", "rs", "toml", "ts", "tsx", "yaml", "yml",
@@ -74,7 +80,8 @@ fn visit_files(root: &Path, dir: &Path, offenders: &mut Vec<(usize, PathBuf)>) {
 
         if file_type.is_dir() {
             visit_files(root, &path, offenders);
-        } else if file_type.is_file() && should_check_file(&path) {
+        } else if file_type.is_file() && should_check_file(&path) && !is_excluded_file(root, &path)
+        {
             let lines = count_lines(&path);
             if lines > MAX_LINES {
                 let rel = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
@@ -90,6 +97,12 @@ fn is_excluded(root: &Path, path: &Path) -> bool {
     EXCLUDED_DIRS
         .iter()
         .any(|excluded| rel == *excluded || rel.starts_with(&format!("{excluded}/")))
+}
+
+fn is_excluded_file(root: &Path, path: &Path) -> bool {
+    let rel = path.strip_prefix(root).unwrap_or(path);
+    let rel = rel.to_string_lossy().replace('\\', "/");
+    EXCLUDED_FILES.iter().any(|excluded| rel == *excluded)
 }
 
 fn should_check_file(path: &Path) -> bool {

@@ -1,0 +1,118 @@
+{
+ "verovio": "6.2.0",
+ "source": "pieces",
+ "mode": "auto",
+ "options": {
+  "adjustPageHeight": true,
+  "scale": 60,
+  "pageWidth": 1400,
+  "header": "none",
+  "footer": "none",
+  "breaks": "auto",
+  "spacingLinear": 0.25,
+  "spacingNonLinear": 0.6
+ },
+ "units": {
+  "description": "SVG viewBox units, y-down, page-local; divide by staff_space for staff spaces (MEI unit = staff_space / 2).",
+  "staff_space": 180,
+  "mei_unit": 90
+ },
+ "page_count": 1,
+ "pages": [
+  {
+   "page": 1,
+   "width_px": 840,
+   "height_px": 558,
+   "viewbox_w": 14000,
+   "viewbox_h": 9290
+  }
+ ],
+ "system_count": 4,
+ "measure_count": 16,
+ "systems": [
+  {
+   "index": 0,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 0,
+   "staves": [
+    {
+     "n": 1,
+     "top": 540,
+     "bottom": 1260
+    }
+   ],
+   "barline_x": [
+    4069,
+    6998,
+    9994,
+    12990
+   ]
+  },
+  {
+   "index": 1,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 4,
+   "staves": [
+    {
+     "n": 1,
+     "top": 2705,
+     "bottom": 3425
+    }
+   ],
+   "barline_x": [
+    3141,
+    6424,
+    9707,
+    12990
+   ]
+  },
+  {
+   "index": 2,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 8,
+   "staves": [
+    {
+     "n": 1,
+     "top": 4870,
+     "bottom": 5590
+    }
+   ],
+   "barline_x": [
+    3306,
+    6810,
+    10314,
+    12988
+   ]
+  },
+  {
+   "index": 3,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 12,
+   "staves": [
+    {
+     "n": 1,
+     "top": 7030,
+     "bottom": 7750
+    }
+   ],
+   "barline_x": [
+    4054,
+    7476,
+    10898,
+    12988
+   ]
+  }
+ ],
+ "counts": {
+  "notes": 52,
+  "rests": 3,
+  "ties": 0,
+  "beams": 0,
+  "flags": 11,
+  "timemap_onsets": 52
+ }
+}

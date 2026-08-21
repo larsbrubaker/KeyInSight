@@ -1,0 +1,228 @@
+{
+ "verovio": "6.2.0",
+ "source": "pieces",
+ "mode": "auto",
+ "options": {
+  "adjustPageHeight": true,
+  "scale": 60,
+  "pageWidth": 1400,
+  "header": "none",
+  "footer": "none",
+  "breaks": "auto",
+  "spacingLinear": 0.25,
+  "spacingNonLinear": 0.6
+ },
+ "units": {
+  "description": "SVG viewBox units, y-down, page-local; divide by staff_space for staff spaces (MEI unit = staff_space / 2).",
+  "staff_space": 180,
+  "mei_unit": 90
+ },
+ "page_count": 2,
+ "pages": [
+  {
+   "page": 1,
+   "width_px": 840,
+   "height_px": 1492,
+   "viewbox_w": 14000,
+   "viewbox_h": 24860
+  },
+  {
+   "page": 2,
+   "width_px": 840,
+   "height_px": 361,
+   "viewbox_w": 14000,
+   "viewbox_h": 6010
+  }
+ ],
+ "system_count": 7,
+ "measure_count": 39,
+ "systems": [
+  {
+   "index": 0,
+   "page": 1,
+   "measure_count": 5,
+   "first_measure": 0,
+   "staves": [
+    {
+     "n": 1,
+     "top": 540,
+     "bottom": 1260
+    },
+    {
+     "n": 2,
+     "top": 2340,
+     "bottom": 3060
+    }
+   ],
+   "barline_x": [
+    3844,
+    6036,
+    8228,
+    10420,
+    12988
+   ]
+  },
+  {
+   "index": 1,
+   "page": 1,
+   "measure_count": 6,
+   "first_measure": 5,
+   "staves": [
+    {
+     "n": 1,
+     "top": 4500,
+     "bottom": 5220
+    },
+    {
+     "n": 2,
+     "top": 6300,
+     "bottom": 7020
+    }
+   ],
+   "barline_x": [
+    3371,
+    5548,
+    7408,
+    9268,
+    11128,
+    12988
+   ]
+  },
+  {
+   "index": 2,
+   "page": 1,
+   "measure_count": 6,
+   "first_measure": 11,
+   "staves": [
+    {
+     "n": 1,
+     "top": 8460,
+     "bottom": 9180
+    },
+    {
+     "n": 2,
+     "top": 10260,
+     "bottom": 10980
+    }
+   ],
+   "barline_x": [
+    3006,
+    5126,
+    7246,
+    9366,
+    11178,
+    12990
+   ]
+  },
+  {
+   "index": 3,
+   "page": 1,
+   "measure_count": 6,
+   "first_measure": 17,
+   "staves": [
+    {
+     "n": 1,
+     "top": 12420,
+     "bottom": 13140
+    },
+    {
+     "n": 2,
+     "top": 14220,
+     "bottom": 14940
+    }
+   ],
+   "barline_x": [
+    3054,
+    4914,
+    6774,
+    8634,
+    10811,
+    12988
+   ]
+  },
+  {
+   "index": 4,
+   "page": 1,
+   "measure_count": 5,
+   "first_measure": 23,
+   "staves": [
+    {
+     "n": 1,
+     "top": 16475,
+     "bottom": 17195
+    },
+    {
+     "n": 2,
+     "top": 18275,
+     "bottom": 18995
+    }
+   ],
+   "barline_x": [
+    3625,
+    5698,
+    8129,
+    10560,
+    12991
+   ]
+  },
+  {
+   "index": 5,
+   "page": 1,
+   "measure_count": 6,
+   "first_measure": 28,
+   "staves": [
+    {
+     "n": 1,
+     "top": 20435,
+     "bottom": 21155
+    },
+    {
+     "n": 2,
+     "top": 22235,
+     "bottom": 22955
+    }
+   ],
+   "barline_x": [
+    3287,
+    5076,
+    7169,
+    8958,
+    10898,
+    12991
+   ]
+  },
+  {
+   "index": 6,
+   "page": 2,
+   "measure_count": 5,
+   "first_measure": 34,
+   "staves": [
+    {
+     "n": 1,
+     "top": 540,
+     "bottom": 1260
+    },
+    {
+     "n": 2,
+     "top": 3393,
+     "bottom": 4113
+    }
+   ],
+   "barline_x": [
+    3587,
+    5980,
+    8540,
+    10779,
+    12990
+   ]
+  }
+ ],
+ "counts": {
+  "notes": 230,
+  "rests": 8,
+  "ties": 8,
+  "beams": 0,
+  "flags": 0,
+  "timemap_onsets": 94
+ }
+}

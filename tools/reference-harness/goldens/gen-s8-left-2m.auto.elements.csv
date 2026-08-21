@@ -1,0 +1,6 @@
+kind,id,page,system,measure,staff,onset,slot,qstamp,x,y,glyph,staff_top,stem_x,stem_y1,stem_y2,accid,accid_x,dot_x,dot_y,x2,y2,flag
+clef,olg8v9g,1,0,0,1,-1,-1,,88,720,E062,540,,,,,,,,,,
+keysig,p19dmk2d,1,0,0,1,-1,-1,,769,720,E262,540,,,,,,,,,,
+metersig,sf8x3r0,1,0,0,1,-1,-1,,1254,720,E084,540,,,,,,,,,,
+note,w1cybpcc,1,0,0,1,0,0,0,1816,810,E0A2,540,,,,,,,,,,
+note,j1mj6nxn,1,0,1,1,1,0,4,3599,630,E0A2,540,,,,,,,,,,

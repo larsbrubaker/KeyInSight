@@ -1,0 +1,90 @@
+{
+ "verovio": "6.2.0",
+ "source": "pieces",
+ "mode": "auto",
+ "options": {
+  "adjustPageHeight": true,
+  "scale": 60,
+  "pageWidth": 1400,
+  "header": "none",
+  "footer": "none",
+  "breaks": "auto",
+  "spacingLinear": 0.25,
+  "spacingNonLinear": 0.6
+ },
+ "units": {
+  "description": "SVG viewBox units, y-down, page-local; divide by staff_space for staff spaces (MEI unit = staff_space / 2).",
+  "staff_space": 180,
+  "mei_unit": 90
+ },
+ "page_count": 1,
+ "pages": [
+  {
+   "page": 1,
+   "width_px": 840,
+   "height_px": 514,
+   "viewbox_w": 14000,
+   "viewbox_h": 8560
+  }
+ ],
+ "system_count": 2,
+ "measure_count": 8,
+ "systems": [
+  {
+   "index": 0,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 0,
+   "staves": [
+    {
+     "n": 1,
+     "top": 540,
+     "bottom": 1260
+    },
+    {
+     "n": 2,
+     "top": 2340,
+     "bottom": 3060
+    }
+   ],
+   "barline_x": [
+    4287,
+    7421,
+    10205,
+    12989
+   ]
+  },
+  {
+   "index": 1,
+   "page": 1,
+   "measure_count": 4,
+   "first_measure": 4,
+   "staves": [
+    {
+     "n": 1,
+     "top": 4500,
+     "bottom": 5220
+    },
+    {
+     "n": 2,
+     "top": 6300,
+     "bottom": 7020
+    }
+   ],
+   "barline_x": [
+    4171,
+    7647,
+    10318,
+    12989
+   ]
+  }
+ ],
+ "counts": {
+  "notes": 42,
+  "rests": 0,
+  "ties": 0,
+  "beams": 0,
+  "flags": 8,
+  "timemap_onsets": 32
+ }
+}

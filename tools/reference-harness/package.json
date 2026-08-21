@@ -1,0 +1,16 @@
+{
+  "name": "keyinsight-reference-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renders KeyInSight's MusicXML corpus through the real Verovio toolkit (pinned) and extracts numeric layout goldens for verovio-rust parity checks.",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "render": "node render_goldens.mjs",
+    "extract": "node extract_metrics.mjs",
+    "goldens": "node render_goldens.mjs && node extract_metrics.mjs"
+  },
+  "dependencies": {
+    "verovio": "6.2.0"
+  }
+}
