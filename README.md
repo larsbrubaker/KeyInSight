@@ -17,20 +17,26 @@ The original is a macOS Swift/SwiftUI app. This port is Rust +
 
 ## Status
 
-**Phase 1 port complete for the core training loop.** All engine modules
-are ported from Swift with their test suites (Core, Score, Engine +
-SessionEngine, Skill, Persistence, Audio DSP, Input, Notation, UI): the
-adaptive trainer runs end-to-end — generated exercises engraved via
-[verovio-rust](https://github.com/larsbrubaker/verovio-rust), self-paced
-and tempo modes, the skill model with unlocks, drills, free play, the
-bundled 18-piece repertoire, per-user profiles, and computer-keyboard
-input (A S D F G H J K = C4–C5, W E T Y U = sharps, Z/X octave).
+**Phase 1 port complete and synced with upstream Swift `9fc4f78`.** All
+engine modules are ported from Swift with their test suites (Core, Score,
+Engine + SessionEngine, Skill, Persistence, Audio DSP, Input, Notation,
+UI): the adaptive trainer runs end-to-end — generated exercises engraved
+via [verovio-rust](https://github.com/larsbrubaker/verovio-rust),
+self-paced and tempo modes, right/left/both/auto hand modes with a
+per-staff skill model, interval and chord-shape ladders with readiness
+probes, the endless streak-centered micro-drill, survival mode (endless
+reading on a sliding three-line feed, three lives, a score to beat),
+practice-from-here on any clicked note, free play with take recording and
+replay, the 61-piece bundled repertoire with search/filter/sort, per-user
+profiles and helper switches, and computer-keyboard input
+(A S D F G H J K = C4–C5, W E T Y U = sharps, Z/X octave).
 
 Phase 2 so far: real audio out on both platforms (metronome clicks +
 Hear It playing an OxiSynth-rendered CC0 piano soundfont through cpal /
-WebAudio), the calibration sheet, player dialogs, multi-system line
-breaking for long pieces, and the Swift app's visual layout. Still to
-come: native MIDI (midir), Web MIDI, the mic backend, and engraving
+WebAudio), the microphone backend (Goertzel-bank note detection), the
+calibration sheet, player dialogs, Verovio-faithful spacing and
+justification with multi-system line breaking, and the Swift app's visual
+layout. Still to come: native MIDI (midir), Web MIDI, and engraving
 refinements.
 
 ## Layout
