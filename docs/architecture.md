@@ -3,7 +3,8 @@
 ## Crate layout
 
 - 3-crate workspace: `keyinsight-core` (all logic + all widgets),
-`keyinsight-native` (desktop shim), `keyinsight-wasm` (browser shim).
+`keyinsight-native` (desktop shim — one binary for Windows and macOS; only
+the app-data directory is OS-specific), `keyinsight-wasm` (browser shim).
 - **Single application, two minimal host shims.** `keyinsight-core` is the  
 entire visible app. The window/canvas, wgpu surface, event loop, and ALL  
 input forwarding (pointer, wheel, keyboard, clipboard, DPR,  

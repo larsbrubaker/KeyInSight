@@ -263,7 +263,7 @@ impl AppDatabase {
                     && e.note_count.unwrap_or(0) >= 2
             })
             .collect();
-        records.sort_by(|a, b| b.started_at_ms.cmp(&a.started_at_ms));
+        records.sort_by_key(|r| std::cmp::Reverse(r.started_at_ms));
         records
             .into_iter()
             .take(limit)

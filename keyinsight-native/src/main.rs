@@ -26,13 +26,21 @@ struct FileStorage {
 
 impl FileStorage {
     fn in_app_data() -> Option<Self> {
+        // Windows: %APPDATA%; macOS: ~/Library/Application Support (the
+        // exact directory the Swift app's `AppDatabase.onDisk()` used);
+        // elsewhere: XDG ~/.local/share.
         let base = std::env::var_os("APPDATA")
             .map(PathBuf::from)
             .or_else(|| {
                 std::env::var_os("HOME").map(|home| {
                     let mut p = PathBuf::from(home);
-                    p.push(".local");
-                    p.push("share");
+                    if cfg!(target_os = "macos") {
+                        p.push("Library");
+                        p.push("Application Support");
+                    } else {
+                        p.push(".local");
+                        p.push("share");
+                    }
                     p
                 })
             })?;

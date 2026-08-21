@@ -15,8 +15,8 @@ Live app: <https://larsbrubaker.github.io/KeyInSight/>
 (training loop works in the browser: press A S D F G H J K = C4–C5,
 W E T Y U = sharps, Z/X octave shift; progress persists in localStorage).
 
-Native app: `cargo run -p keyinsight-native` (persists to
-`%APPDATA%/KeyInSight/keyinsight.json`).
+Native app: `cargo run -p keyinsight-native` — Windows and macOS (persists to
+`%APPDATA%/KeyInSight/keyinsight.json` / `~/Library/Application Support/KeyInSight/keyinsight.json`).
 
 ## Repository layout (three repos, all pushed)
 
