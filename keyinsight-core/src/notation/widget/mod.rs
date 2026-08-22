@@ -6,6 +6,7 @@
 //! page the widget scrolls itself (`scroll.rs`), keeping the current
 //! system in the upper third like the Swift page's `ensureVisible`.
 
+mod overlay;
 mod scroll;
 
 use std::cell::RefCell;
@@ -23,6 +24,14 @@ use crate::notation::renderer::READING_STAFF_PX;
 use crate::notation::{NotationController, NoteState};
 use scroll::{PageScroll, ScrollOutcome};
 
+/// `#score { padding: 16px 24px; }`: the page keeps this much room around
+/// the engraved systems, in screen px at any display scale. The horizontal
+/// pad narrows the box the score is fitted (or wrapped) into; the vertical
+/// one sits above the first system and below the last, and scrolls away
+/// with the page like the padding of the Swift page's document.
+pub const PAGE_PAD_X: f64 = 24.0;
+pub const PAGE_PAD_Y: f64 = 16.0;
+
 /// Whole device pixels for every vertical content offset. The Swift page
 /// learned this the hard way: settling on a fractional offset knocks staff
 /// lines off the pixel grid — a 1px black line painted as 2px of gray. The
@@ -30,6 +39,15 @@ use scroll::{PageScroll, ScrollOutcome};
 /// follow-top slide alike.
 pub fn whole_px(offset: f64) -> f64 {
     offset.round()
+}
+
+/// The widget box the systems are engraved into, inset by the page
+/// padding (never negative, so a sliver-thin widget still lays out).
+fn content_box(width: f64, height: f64) -> (f64, f64) {
+    (
+        (width - 2.0 * PAGE_PAD_X).max(1.0),
+        (height - 2.0 * PAGE_PAD_Y).max(1.0),
+    )
 }
 
 /// How the widget fits the engraving to its viewport.
@@ -52,6 +70,24 @@ struct Placement {
     offset_x: f64,
     origin_y: f64,
     score_h: f64,
+}
+
+impl Placement {
+    /// A layout y (y-down, top of the score box = 0) in widget px (y-up).
+    fn widget_y(&self, y_down: f64) -> f64 {
+        self.origin_y + (self.score_h - y_down) * self.scale
+    }
+
+    /// An element's layout bounds (y-down) as a widget rect (y-up) — the
+    /// screen rect the Swift page read with `getBoundingClientRect`.
+    fn widget_rect(&self, (x, y_top, w, h): (f64, f64, f64, f64)) -> Rect {
+        Rect::new(
+            self.offset_x + x * self.scale,
+            self.widget_y(y_top + h),
+            w * self.scale,
+            h * self.scale,
+        )
+    }
 }
 
 pub struct NotationWidget {
@@ -115,7 +151,7 @@ impl NotationWidget {
         let controller = self.controller.borrow();
         let renderer = controller.renderer.borrow();
         let layout = renderer.toolkit().current_layout()?;
-        let (width, height) = (self.bounds.width, self.bounds.height);
+        let (width, height) = content_box(self.bounds.width, self.bounds.height);
         let scale = match page_scale {
             Some(scale) => scale,
             None => renderer.display_scale(width, height)?,
@@ -123,8 +159,11 @@ impl NotationWidget {
         let score_h = layout.height;
         Some(Placement {
             scale,
-            offset_x: (width - layout.width * scale) / 2.0,
-            origin_y: whole_px(height - score_h * scale) + whole_px(shift),
+            offset_x: PAGE_PAD_X + (width - layout.width * scale) / 2.0,
+            // The page pads the top of the content, and the score hangs
+            // from there.
+            origin_y: whole_px(self.bounds.height - PAGE_PAD_Y - score_h * scale)
+                + whole_px(shift),
             score_h,
         })
     }
@@ -162,7 +201,7 @@ impl Widget for NotationWidget {
         if available.width > 0.0 && available.height > 0.0 {
             if let Ok(controller) = self.controller.try_borrow() {
                 if let Ok(mut renderer) = controller.renderer.try_borrow_mut() {
-                    let (w, h) = (available.width, available.height);
+                    let (w, h) = content_box(available.width, available.height);
                     if controller.follow_top() {
                         renderer.fit_view(w, h);
                     } else {
@@ -192,21 +231,13 @@ impl Widget for NotationWidget {
         let now = (self.now)();
         let (follow_ids, shift) = self.prepare_frame(now);
         let page_scale = self.page_scale();
-        let Some(Placement {
-            scale,
-            offset_x,
-            origin_y,
-            score_h,
-        }) = self.placement(shift)
-        else {
+        let Some(placement) = self.placement(shift) else {
             return;
         };
 
         ctx.save();
         // A slid or scrolled score leaves the widget through its edges.
         ctx.clip_rect(0.0, 0.0, width, height);
-        ctx.translate(offset_x, origin_y);
-        ctx.scale(scale, scale);
 
         {
             let controller = self.controller.borrow();
@@ -228,9 +259,15 @@ impl Widget for NotationWidget {
                     }
                 }
 
+                ctx.save();
+                ctx.translate(placement.offset_x, placement.origin_y);
+                ctx.scale(placement.scale, placement.scale);
                 // The toolkit draws y-up given the top edge of the score box.
-                toolkit.render(ctx, &self.music_font, 0.0, score_h, &options);
-                paint_overlays(ctx, &controller, toolkit, &self.music_font, score_h);
+                toolkit.render(ctx, &self.music_font, 0.0, placement.score_h, &options);
+                ctx.restore();
+                // The ghost and the ticks were CSS boxes over the SVG, so
+                // they paint in screen px, outside the engraving's scale.
+                overlay::paint(ctx, &controller, layout, placement, renderer.staff_space());
             }
         }
 
@@ -275,64 +312,6 @@ impl Widget for NotationWidget {
     }
 }
 
-/// Ghost note and timing ticks, painted in score space (y-up, the score
-/// box's top edge at `score_h`).
-fn paint_overlays(
-    ctx: &mut dyn DrawCtx,
-    controller: &NotationController,
-    toolkit: &verovio_rust::Toolkit,
-    music_font: &Arc<Font>,
-    score_h: f64,
-) {
-    // Ghost note: gray notehead at the played staff position, aligned
-    // with the expected note (ports the HTML overlay math — half a
-    // staff space per diatonic step).
-    if let Some(ghost) = controller.ghost() {
-        if let Some((x, y_top, w, h)) = toolkit.element_bounds(&ghost.expected_id) {
-            let staff_space = 10.0; // LayoutOptions::default().staff_space
-            let cx = x + w / 2.0;
-            let cy_down = y_top + h / 2.0 - ghost.offset_steps as f64 * staff_space / 2.0;
-            let cy = score_h - cy_down;
-            let gray = Color::from_rgba8(0x8A, 0x8A, 0x8A, 64);
-            ctx.set_fill_color(gray);
-            ctx.begin_path();
-            ctx.circle(cx, cy, w * 0.5);
-            ctx.fill();
-            ctx.set_stroke_color(Color::from_rgb8(0x8A, 0x8A, 0x8A));
-            ctx.set_line_width(2.0);
-            ctx.begin_path();
-            ctx.circle(cx, cy, w * 0.5);
-            ctx.stroke();
-        }
-    }
-
-    // Timing ticks: ◂ early / ▸ late above the note.
-    for tick in controller.ticks() {
-        if let Some((x, y_top, w, _h)) = toolkit.element_bounds(&tick.id) {
-            let color = Color::from_rgb8(0xB8, 0x86, 0x0B);
-            ctx.set_fill_color(color);
-            ctx.set_font(Arc::clone(music_font));
-            let cx = x + w / 2.0;
-            let cy = score_h - (y_top - 14.0);
-            // Simple triangle glyphs drawn as paths (the UI font isn't
-            // loaded here; a filled triangle reads identically).
-            let s = 5.0;
-            ctx.begin_path();
-            if tick.early {
-                ctx.move_to(cx + s, cy + s);
-                ctx.line_to(cx - s, cy);
-                ctx.line_to(cx + s, cy - s);
-            } else {
-                ctx.move_to(cx - s, cy + s);
-                ctx.line_to(cx + s, cy);
-                ctx.line_to(cx - s, cy - s);
-            }
-            ctx.close_path();
-            ctx.fill();
-        }
-    }
-}
-
 impl NotationWidget {
     /// Everything a painted frame settles before the score is drawn: the
     /// page scroll (reset on a new score, content height, the glide in
@@ -354,7 +333,7 @@ impl NotationWidget {
                 renderer
                     .toolkit()
                     .current_layout()
-                    .map_or(0.0, |layout| layout.height * scale)
+                    .map_or(0.0, |layout| layout.height * scale + 2.0 * PAGE_PAD_Y)
             };
             self.scroll.set_content(content_h, height);
         } else {

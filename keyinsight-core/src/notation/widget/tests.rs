@@ -55,6 +55,12 @@ fn widget_for(
 
 /// Paint one frame into an offscreen framebuffer (the real paint path).
 fn paint(widget: &mut NotationWidget) {
+    paint_pixels(widget);
+}
+
+/// Paint one frame and keep the pixels: `(rgba, width, height)`, row 0 at
+/// the bottom like every other widget coordinate.
+fn paint_pixels(widget: &mut NotationWidget) -> (Vec<u8>, u32, u32) {
     let (w, h) = (
         widget.bounds.width.ceil() as u32,
         widget.bounds.height.ceil() as u32,
@@ -62,6 +68,26 @@ fn paint(widget: &mut NotationWidget) {
     let mut framebuffer = agg_gui::framebuffer::Framebuffer::new(w, h);
     let mut ctx = agg_gui::gfx_ctx::GfxCtx::new(&mut framebuffer);
     widget.paint(&mut ctx);
+    drop(ctx);
+    (framebuffer.pixels().to_vec(), w, h)
+}
+
+/// The painted color at a widget point.
+fn pixel_at(pixels: &(Vec<u8>, u32, u32), point: Point) -> (u8, u8, u8) {
+    let (x, y) = (point.x.round() as u32, point.y.round() as u32);
+    assert!(x < pixels.1 && y < pixels.2, "{point:?} off the widget");
+    let i = ((y * pixels.1 + x) * 4) as usize;
+    (pixels.0[i], pixels.0[i + 1], pixels.0[i + 2])
+}
+
+fn close_to(painted: (u8, u8, u8), want: (u8, u8, u8), tolerance: i32) -> bool {
+    [
+        (painted.0, want.0),
+        (painted.1, want.1),
+        (painted.2, want.2),
+    ]
+    .iter()
+    .all(|&(a, b)| (a as i32 - b as i32).abs() <= tolerance)
 }
 
 /// Layout y-down of a note's center, and the index of its system.
@@ -171,7 +197,11 @@ fn short_exercises_fit_and_long_pieces_page_in_training() {
         let layout = renderer.toolkit().current_layout().unwrap();
         (layout.width * scale, layout.height * scale)
     };
-    assert!(layout_size.0 <= 700.0, "width {}", layout_size.0);
+    assert!(
+        layout_size.0 <= 700.0 - 2.0 * PAGE_PAD_X,
+        "wrapped inside the padded page, width {}",
+        layout_size.0
+    );
     assert!(layout_size.1 > 300.0, "height {}", layout_size.1);
     paint(&mut widget);
     assert_eq!(
@@ -216,7 +246,7 @@ fn current_note_below_the_band_glides_its_system_to_eighteen_percent() {
     // The glide has begun but the first frame is still at 0...
     assert!(widget.scroll.is_gliding());
     assert_eq!(widget.scroll_offset(), 0.0);
-    let expected = (system_top * scale - 300.0 * 0.18).round();
+    let expected = (PAGE_PAD_Y + system_top * scale - 300.0 * 0.18).round();
     assert_eq!(widget.scroll.target(), expected);
     // ...eases out over 0.4 s in whole pixels...
     clock.set(10.2);
@@ -322,7 +352,7 @@ fn wheel_hands_control_to_the_user_until_the_cursor_moves_on() {
         .staff_top;
     assert_eq!(
         widget.scroll.target(),
-        (top * scale - 300.0 * 0.18).round().max(0.0)
+        (PAGE_PAD_Y + top * scale - 300.0 * 0.18).round().max(0.0)
     );
     // A new score: back to the top, override gone.
     controller.borrow_mut().load_score();
@@ -427,12 +457,15 @@ fn playback_follow_glides_the_page_along_with_the_cursor() {
     assert!(widget.scroll.is_gliding());
     assert_eq!(
         widget.scroll.target(),
-        (far_top * scale - 300.0 * 0.18).round()
+        (PAGE_PAD_Y + far_top * scale - 300.0 * 0.18).round()
     );
     clock.set(11.5);
     paint(&mut widget);
     assert!(!widget.scroll.is_gliding());
-    assert_eq!(widget.scroll_offset(), (far_top * scale - 300.0 * 0.18).round());
+    assert_eq!(
+        widget.scroll_offset(),
+        (PAGE_PAD_Y + far_top * scale - 300.0 * 0.18).round()
+    );
     // A wheel during playback hands control to the user for the rest of
     // the cursor's system, exactly like a `Current` note would.
     widget.on_event(&Event::MouseWheel {
@@ -442,4 +475,128 @@ fn playback_follow_glides_the_page_along_with_the_cursor() {
         modifiers: Modifiers::default(),
     });
     assert_eq!(controller.borrow().user_scroll_system(), Some(far_system));
+}
+
+#[test]
+fn the_page_pads_sixteen_by_twenty_four_around_the_systems() {
+    // `#score { padding: 16px 24px }`: the systems are fitted into the
+    // padded box and hang from the top pad.
+    let clock = Rc::new(std::cell::Cell::new(0.0));
+    let (renderer, _) = short_exercise();
+    let (widget, _) = widget_for(
+        &renderer,
+        NotationFit::Fit,
+        (700.0, 300.0),
+        Rc::clone(&clock),
+    );
+    let placement = widget.placement(0.0).expect("placement");
+    let (score_w, score_h) = {
+        let renderer = renderer.borrow();
+        let layout = renderer.toolkit().current_layout().unwrap();
+        (
+            layout.width * placement.scale,
+            layout.height * placement.scale,
+        )
+    };
+    assert!(
+        placement.offset_x >= PAGE_PAD_X,
+        "left edge at {}",
+        placement.offset_x
+    );
+    assert!(
+        placement.offset_x + score_w <= 700.0 - PAGE_PAD_X + 0.5,
+        "right edge at {}",
+        placement.offset_x + score_w
+    );
+    // Top-aligned under the top pad (whole px, like every offset).
+    assert!((placement.origin_y + score_h - (300.0 - PAGE_PAD_Y)).abs() <= 0.5);
+    assert!(score_h <= 300.0 - 2.0 * PAGE_PAD_Y + 0.5, "height {score_h}");
+
+    // A page wraps at the padded width too, and the document it scrolls
+    // is the score plus a pad at each end.
+    let (renderer, _) = long_piece();
+    let (mut widget, _) = widget_for(&renderer, NotationFit::Page, (700.0, 300.0), clock);
+    let scale = widget.page_scale().expect("a page");
+    paint(&mut widget);
+    let content_h = renderer
+        .borrow()
+        .toolkit()
+        .current_layout()
+        .unwrap()
+        .height
+        * scale;
+    assert_eq!(
+        widget.scroll.max_scroll(300.0),
+        content_h + 2.0 * PAGE_PAD_Y - 300.0
+    );
+}
+
+#[test]
+fn the_ghost_and_its_tick_paint_in_screen_pixels_over_the_notehead() {
+    // The Swift overlay was CSS boxes over the SVG: lengths in screen px,
+    // positions from the notehead's screen rect.
+    let clock = Rc::new(std::cell::Cell::new(0.0));
+    let (renderer, ids) = short_exercise();
+    let (mut widget, controller) = widget_for(
+        &renderer,
+        NotationFit::Fit,
+        (700.0, 300.0),
+        Rc::clone(&clock),
+    );
+    let expected = ids[0].clone();
+    // Twelve diatonic steps down: six spaces under the expected note, so
+    // the ghost clears the staff whatever line it started on.
+    controller.borrow_mut().show_ghost(&expected, -12);
+    controller.borrow_mut().add_tick(&expected, true);
+    let pixels = paint_pixels(&mut widget);
+
+    let placement = widget.placement(0.0).expect("placement");
+    let bounds = renderer
+        .borrow()
+        .toolkit()
+        .element_bounds(&expected)
+        .expect("notehead bounds");
+    let head = placement.widget_rect(bounds);
+    let space = renderer.borrow().staff_space() * placement.scale;
+    let oval = overlay::ghost_oval(head, -12, space);
+    // On the oval's major axis, which `rotate(-20deg)` tilts up to the
+    // right: the stroke's centre line, 2.5 px of #8a8a8a.
+    let (rx, angle) = ((oval.width - 2.5) / 2.0, 20_f64.to_radians());
+    let ring = Point::new(
+        oval.center().x + rx * angle.cos(),
+        oval.center().y + rx * angle.sin(),
+    );
+    assert!(
+        close_to(pixel_at(&pixels, ring), (0x8A, 0x8A, 0x8A), 40),
+        "ghost ring at {ring:?}: {:?}",
+        pixel_at(&pixels, ring)
+    );
+    // The first ledger out from the staff: 2 px of #9a9a9a.
+    let (top, bottom) = overlay::staff_lines_at(
+        renderer.borrow().toolkit().current_layout().unwrap(),
+        bounds,
+        renderer.borrow().staff_space(),
+    )
+    .expect("the note's staff");
+    let ledgers = overlay::ghost_ledgers(
+        oval,
+        placement.widget_y(top),
+        placement.widget_y(bottom),
+        space,
+    );
+    assert!(!ledgers.is_empty(), "a ghost six spaces out needs ledgers");
+    let ledger = ledgers[0].center();
+    assert!(
+        close_to(pixel_at(&pixels, ledger), (0x9A, 0x9A, 0x9A), 40),
+        "ledger at {ledger:?}: {:?}",
+        pixel_at(&pixels, ledger)
+    );
+    // And the early tick above it: #b8860b ink inside the glyph box.
+    let ink = overlay::tick_ink(head);
+    let inside = Point::new(ink.right() - 1.0, ink.center().y);
+    assert!(
+        close_to(pixel_at(&pixels, inside), (0xB8, 0x86, 0x0B), 40),
+        "tick at {inside:?}: {:?}",
+        pixel_at(&pixels, inside)
+    );
 }

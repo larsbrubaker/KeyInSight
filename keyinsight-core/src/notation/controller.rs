@@ -15,6 +15,7 @@ use std::rc::Rc;
 use verovio_rust::{ElementKind, Primitive};
 
 use crate::notation::slide::SlideLane;
+use crate::notation::widget::PAGE_PAD_Y;
 use crate::notation::{NotationRenderer, Rendered};
 
 /// Hover callback: (kind, element id); empty strings end the hover.
@@ -341,7 +342,9 @@ impl NotationController {
     /// scroll alone. Verbatim rule: when the system's top is above 5% or
     /// its bottom below 70% of the viewport, put its top at 18% —
     /// `round(scrollY + r.top - vh*0.18)`, never below 0, never past the
-    /// end of the page. Yields to the user: after a manual scroll the
+    /// end of the page. `r.top` is a screen rect, so it counts the page's
+    /// top padding ([`PAGE_PAD_Y`]), and the page runs that much taller
+    /// than the engraving at both ends. Yields to the user: after a manual scroll the
     /// follow stays off while the cursor remains on that system and
     /// re-engages when it enters a different one. Follow-top (survival)
     /// slides by transform instead, so this is always `None` there.
@@ -367,14 +370,16 @@ impl NotationController {
             }
             self.user_scroll_system = None; // new system: re-engage
         }
-        let top = system.top * scale - scroll;
-        let bottom = system.bottom * scale - scroll;
+        // On screen, like the page's `getBoundingClientRect`: the score
+        // hangs below the page's top padding.
+        let top = PAGE_PAD_Y + system.top * scale - scroll;
+        let bottom = PAGE_PAD_Y + system.bottom * scale - scroll;
         if top >= viewport_h * 0.05 && bottom <= viewport_h * 0.7 {
             return None;
         }
         let content_h = {
             let renderer = self.renderer.borrow();
-            renderer.toolkit().current_layout()?.height * scale
+            renderer.toolkit().current_layout()?.height * scale + 2.0 * PAGE_PAD_Y
         };
         let max_scroll = (content_h - viewport_h).max(0.0);
         let y = (scroll + top - viewport_h * 0.18).round();
@@ -425,8 +430,9 @@ impl NotationController {
         let layout = renderer.toolkit().current_layout()?;
         let &(_, y_top, _, h) = layout.bounds_by_id.get(id)?;
         let systems = &layout.systems;
-        // The note's ink: the notehead's centre (its glyph box is an em
-        // square, too loose to measure with) stretched along its stem.
+        // The note's ink: the notehead's centre — `bounds_by_id` is the
+        // glyph's real Leipzig bounding box, so the centre is the head's
+        // own centre — stretched along its stem.
         let cy = y_top + h / 2.0;
         let (ink_top, ink_bottom) = layout
             .elements

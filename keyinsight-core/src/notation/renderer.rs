@@ -126,6 +126,12 @@ impl NotationRenderer {
         &self.toolkit
     }
 
+    /// The engraving's staff space (layout px) — the distance between
+    /// adjacent staff lines every other length scales off.
+    pub fn staff_space(&self) -> f64 {
+        self.layout_options.staff_space
+    }
+
     /// The system width (layout px) the current engraving wraps and
     /// justifies to; `None` engraves one endless, unjustified system.
     pub fn system_width(&self) -> Option<f64> {

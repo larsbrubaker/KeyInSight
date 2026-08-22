@@ -2,11 +2,13 @@
 //! arithmetic of the Swift page script (`r.top < vh*0.05 || r.bottom >
 //! vh*0.7` → `scrollTo(round(scrollY + r.top - vh*0.18))`), the manual
 //! override it yields to, the `loadScore` resets, and the follow-top
-//! exclusion.
+//! exclusion. `r.top` is a screen rect, so every expectation counts the
+//! page's top padding.
 
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use super::widget::PAGE_PAD_Y;
 use super::{NotationController, NotationRenderer, NoteState};
 use crate::core::SplitMix64;
 use crate::score::{ExerciseGenerator, MusicXmlEncoder, PitchOption};
@@ -70,7 +72,7 @@ fn a_system_below_seventy_percent_scrolls_its_top_to_eighteen_percent() {
         "system 2 bottom {bottom} is below the band"
     );
     let target = c.follow_scroll_target(id, 1.0, VH, 0.0);
-    assert_eq!(target, Some((top - VH * 0.18).round()));
+    assert_eq!(target, Some((PAGE_PAD_Y + top - VH * 0.18).round()));
     assert_eq!(target.unwrap().fract(), 0.0);
 }
 
@@ -79,13 +81,13 @@ fn a_system_above_five_percent_scrolls_back_into_the_band() {
     let (mut c, systems) = paged_score();
     let (ref id, top, _) = systems[1];
     // Scrolled so the system's top sits 10 px above the viewport.
-    let scroll = top + 10.0;
+    let scroll = PAGE_PAD_Y + top + 10.0;
     assert_eq!(
         c.follow_scroll_target(id, 1.0, VH, scroll),
-        Some((scroll + (top - scroll) - VH * 0.18).round())
+        Some((PAGE_PAD_Y + top - VH * 0.18).round())
     );
     // Just inside the 5% line: left alone.
-    let scroll = top - VH * 0.06;
+    let scroll = PAGE_PAD_Y + top - VH * 0.06;
     assert_eq!(c.follow_scroll_target(id, 1.0, VH, scroll), None);
 }
 
@@ -93,7 +95,7 @@ fn a_system_above_five_percent_scrolls_back_into_the_band() {
 fn a_system_inside_the_band_is_left_alone() {
     let (mut c, systems) = paged_score();
     let (ref id, top, _) = systems[2];
-    let scroll = top - VH * 0.3; // top at 30%, bottom at 40%
+    let scroll = PAGE_PAD_Y + top - VH * 0.3; // top at 30%, bottom at 40%
     assert_eq!(c.follow_scroll_target(id, 1.0, VH, scroll), None);
 }
 
@@ -104,7 +106,7 @@ fn targets_are_whole_pixels_at_fractional_scales_and_never_negative() {
     // The first system is at the top of the page: an 18% placement would
     // be negative — clamped to 0 (and a no-op at scroll 0 since it is in
     // the band; check from further down the page).
-    assert!(top0 < VH * 0.18);
+    assert!(PAGE_PAD_Y + top0 < VH * 0.18);
     let target = c.follow_scroll_target(first, 1.0, VH, 300.0);
     assert_eq!(target, Some(0.0));
     // A fractional display scale still lands on a whole pixel.
@@ -114,7 +116,7 @@ fn targets_are_whole_pixels_at_fractional_scales_and_never_negative() {
         .follow_scroll_target(id, scale, VH, 0.0)
         .expect("system 3 is below the band");
     assert_eq!(target.fract(), 0.0);
-    assert_eq!(target, (top * scale - VH * 0.18).round());
+    assert_eq!(target, (PAGE_PAD_Y + top * scale - VH * 0.18).round());
     // Never past the end of the page.
     let content_h = c
         .renderer
@@ -123,7 +125,8 @@ fn targets_are_whole_pixels_at_fractional_scales_and_never_negative() {
         .current_layout()
         .unwrap()
         .height
-        * scale;
+        * scale
+        + 2.0 * PAGE_PAD_Y;
     let (ref last, _, _) = systems[systems.len() - 1];
     let target = c.follow_scroll_target(last, scale, VH, 0.0).unwrap();
     assert!(target <= (content_h - VH).max(0.0).round());
@@ -145,7 +148,7 @@ fn manual_scroll_yields_until_the_cursor_enters_another_system() {
     // follow re-engages on this very call.
     assert_eq!(
         c.follow_scroll_target(on_three, 1.0, VH, 0.0),
-        Some((top3 - VH * 0.18).round())
+        Some((PAGE_PAD_Y + top3 - VH * 0.18).round())
     );
     assert_eq!(c.user_scroll_system(), None);
     let _ = top2;
