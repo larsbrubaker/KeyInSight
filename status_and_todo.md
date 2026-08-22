@@ -5,13 +5,41 @@ land; delete this file when it's empty.*
 
 ## Resume here
 
-Three repos, all pushed and green at this hand-off:
+State at 2026-08-21 late evening (Mac session). Commits since the hand-off —
+KeyInSight: `851e359` (`--screenshot`, sheet launch hooks), `eaeb339` (Swift
+reference corpus + capture tools), `a14132b` (verovio-rust pin → `fc6666b`),
+`f9330a2` (Library sheet layout fix), `904d55e` (`--piece` regression test),
+`2c56e0d` (headless layout tests for the other sheets), `58497ac` (labeled
+pickers, tabular digits). agg-gui: `149db0d` (`with_screenshot`), `aac93b8`
+(`Font::with_tabular_digits`). verovio-rust: `fc6666b` (golden gate from the
+submodule layout, per-category `KNOWN_DEVIATIONS`, CI parity job).
+**Nothing pushed yet** — push agg-gui first (KeyInSight CI builds against it),
+then verovio-rust, then KeyInSight. A reviewer pass over these commits was
+running at the end of the session — check for its findings.
+
+Findings parked for later (not in the numbered lists):
+- `ui/app.rs` ~288: the session seed is `host_now()*1000` at build time, ≈0 on
+  every launch — runs are NOT wall-clock seeded (the "Known rough edges" entry
+  below is wrong); decide whether to seed from the OS clock or keep determinism.
+- agg-gui `SHAPE_CACHE` is keyed on the font's `Arc<Vec<u8>>` pointer — a font
+  dropped and reallocated at the same address serves stale shaping.
+- agg-gui `FlexColumn::layout` rounds child origin and height separately, so a
+  half-pixel row spills 1 px past its slot (sheet tests allow 1 px slack).
+- Side-panel picker tracks stretch to the row (flex 1); Swift's Pacing/Hands
+  tracks stop at natural width — one-line anchor change if wanted.
+- `sheets/player_dialogs.rs` has no layout test yet (cheap, same harness).
+
+agg-gui `stash@{0}` holds someone's earlier WIP from detached `266ed7a`
+(pin_platform_for_testing guard, mac CI matrix, `cargo dev-mac`) — not from
+this session; rebase onto main or drop.
+
+Three repos:
 
 | Repo | main | Notes |
 |---|---|---|
-| KeyInSight | this commit | 367 tests, clippy `-D warnings`, native + wasm build; submodule `verovio-rust/` pinned to `d85ccff` |
-| verovio-rust | `d85ccff` | engraving parity work in flight (see below); `verovio-cpp-reference/` must be initialized to read the C++ (`git submodule update --init --depth 1`) |
-| agg-gui (sibling `../agg-gui`, path-patched) | `8ffc74a` (0.4.1) | SegmentedControl, Spinner, default/cancel actions, `NativeShellConfig::new().with_min_size`, scrollbar helpers public. **No branches** — commit on main |
+| KeyInSight | `f9330a2`+ | 372 tests, clippy `-D warnings`, native + wasm build; submodule `verovio-rust/` pinned to `fc6666b` |
+| verovio-rust | `fc6666b` | golden gate: set `VEROVIO_GOLDENS_REQUIRED=1`; from inside the submodule run cargo with `--config 'patch.crates-io.agg-gui.path="/Users/larsbrubaker/Development/rust-apps/agg-gui/agg-gui"'` |
+| agg-gui (sibling `../agg-gui`, path-patched) | `149db0d` | 0.4.1 + `with_screenshot`. agg-gui itself is not clippy-clean under `-D warnings` (131 pre-existing lints in `agg-gui/src`). **No branches** — commit on main |
 
 Fresh machine:
 ```bash
@@ -22,14 +50,21 @@ Rules: `CLAUDE.md` (orchestration pattern: plan in the main session, delegate to
 `.claude/agents/{implementer,reviewer,fix-test-failures}.md`), `docs/*.md`.
 Engraving parity is measured by `tools/reference-harness/` (Verovio 6.2 goldens;
 `node render_goldens.mjs && node extract_metrics.mjs --check`) and gated by
-`verovio-rust/tests/golden_metrics_tests.rs` (set `VEROVIO_GOLDENS_REQUIRED=1` to
-fail instead of skip when goldens are absent).
+`verovio-rust/tests/golden_metrics_tests.rs`.
+Visual parity: Swift references in `reference/swift/` (README there; regenerate
+with `tools/swift-reference-capture/` — macOS has no `timeout`; the Swift app
+writes the real user DB, so restore hands mode to Right after captures); Rust
+captures via `keyinsight-native --screenshot <png> [--library|--survival|--progress|--about|--profile|--calibration|--piece <slug>]`
+(physical 2× pixels; one unexplained hang at 100 % CPU was seen once, re-run
+completed in 2 s).
 
 ## TODO — engraving parity (verovio-rust, numeric, Windows-doable)
 
-Scoreboard at `d85ccff` (golden units; 180 = 1 staff space): system structure
-exact 111/111; staff tops ≤ 2; note y exact; note x / barline x ≤ 45 outside
-`KNOWN_DEVIATIONS` (moonlight-opening chords, gen-s4 stems — see the test).
+Scoreboard at `fc6666b` (golden units; 180 = 1 staff space): structure 111/111;
+staff tops ≤ 2; note y / stem y / dot y exact; note x / stem x / barline x /
+dot x ≤ 45; accidental x ≤ 45; ties scoreboard-only. `KNOWN_DEVIATIONS` is now
+per (render, category): moonlight-opening/StaffTop (ties as positioners, step
+9) and gymnopedie-1/AccidX (stacked accidentals, step 8).
 
 1. **Step 8 — chords**: `Note::CalcNoteHeadShift` (seconds flip across the stem),
    `AdjustAccidXFunctor` column stacking, chord dot collision pass
@@ -39,8 +74,6 @@ exact 111/111; staff tops ≤ 2; note y exact; note x / barline x ≤ 45 outside
    overflow (`vertical.rs`). Goldens: tie x2/y2 + apex.
 3. Shrink `KNOWN_DEVIATIONS` to empty; tighten gates; update `docs/porting.md`
    tolerances (it must match the test constants).
-4. Review `dd0c7e4` (stems) + `d85ccff` (follow-ups) — committed unreviewed when
-   the session stopped (tests green).
 5. KeyInSight data fix: add proper `<accidental>` elements (measure-carry rules)
    to pieces with out-of-key alters and no accidentals (fur-elise ×2,
    minuet-in-g-full, eine-kleine-nachtmusik, moonlight-opening,
@@ -86,21 +119,19 @@ spinner, Profile toggle order, level-meter palette, bottom-bar surface.
    rich_text; `.thinMaterial` callout + `.bar` material + opacity fade; intrinsic
    width ComboBox; Semibold face for `.headline`; icon cleanup (distinct
    `CHECK_SEAL`, real piano-keys and metronome glyphs; bottom-bar glyph 14→13).
-5. Add `keyinsight-native --screenshot <path> [--library|--survival|--progress|
-   --about|--profile|--calibration]` (agg-gui `ScreenshotHandle` + demo-wgpu
-   readback) for deterministic captures; `.claude/launch.json` for `demo/`
-   (`bun install`, `bun run wasm`, `bun run dev`).
+5. **Diffs from the Rust-vs-Swift captures** (besides 1–4 and the in-flight
+   items above): Progress sheet's staff draws stems and misplaced ledger lines
+   where Swift shows stemless noteheads with one ledger per note; Library rows
+   lack hairline separators and the filter/sort controls are top-aligned
+   instead of centred on the search field; survival/notation page margins far
+   tighter than Swift (item 3); About lacks italics (item 4); the Rust About
+   sheet is wider than Swift's.
 
 ## TODO — visual matching (needs the Mac)
 
-1. Build/run the pinned Swift app (`keyinsight-swift-reference`, `swift run`);
-   capture reference screenshots of every view/state (training per hand mode,
-   tempo, drill, survival mid-run + summary, free play, repertoire + chip,
-   Library filters, Progress, About, Profile, Calibration, dialogs) — the
-   Swift `--demo` run walks most states. No Swift screenshots exist anywhere yet.
-2. Commit them as a `reference/` corpus; diff against Rust captures (item 5 above
-   or the wasm demo in a browser at a fixed viewport).
-3. Capture one end-to-end pinned exercise per seed from the macOS build as a
+Done: reference corpus (`reference/swift/`, items 1–2). Remaining:
+
+1. Capture one end-to-end pinned exercise per seed from the macOS build as a
    cross-platform determinism test (SplitMix64 draws are now bit-exact).
 
 ## TODO — features (small)
