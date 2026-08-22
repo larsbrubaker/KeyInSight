@@ -8,6 +8,8 @@
 
 mod about;
 mod calibration;
+#[cfg(test)]
+pub(crate) mod layout_test_support;
 mod library;
 mod player_dialogs;
 mod profile;

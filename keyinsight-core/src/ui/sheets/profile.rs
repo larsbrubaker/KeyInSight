@@ -151,3 +151,93 @@ mod tests {
         assert_eq!(header_title(&engine), "Ada");
     }
 }
+
+/// Layout regression tests: header, both helper blocks and the footer
+/// caption all fit the 440×320 panel (the Library search-box failure
+/// class, where a chrome row swells and shoves content off the sheet).
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui::sheets::layout_test_support::{
+        all_of_type, contains, describe, laid_out_nodes, node_with_property,
+        node_with_property_prefix, nodes_outside_panel, panel_rect, shared_test_engine, WINDOW,
+    };
+    use crate::ui::side_panel::{open_cell, SidePanelCells};
+    use agg_gui::geometry::Rect;
+    use agg_gui::widget::InspectorNode;
+
+    /// Build the sheet and open it exactly as the bar's profile button does.
+    fn opened_sheet_nodes() -> Vec<InspectorNode> {
+        let engine = shared_test_engine();
+        let fonts = UiFonts::bundled();
+        let cells = SidePanelCells::new();
+        let mut sheet = build_profile_sheet(&engine, &fonts, &cells);
+        open_cell(&cells.show_profile);
+        laid_out_nodes(&mut sheet)
+    }
+
+    /// The Swift `.frame(width: 440, height: 320)`, centered.
+    #[test]
+    fn panel_is_the_swift_fixed_frame() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        assert_eq!(panel.width, SHEET_SIZE.width);
+        assert_eq!(panel.height, SHEET_SIZE.height);
+        assert!(
+            contains(Rect::new(0.0, 0.0, WINDOW.width, WINDOW.height), panel),
+            "panel {panel:?} must sit inside the window"
+        );
+    }
+
+    /// Both helper switches and their labels are on the panel, each with
+    /// a real size — the switches are the whole point of the sheet.
+    #[test]
+    fn both_helper_toggles_sit_inside_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let toggles = all_of_type(&nodes, "ToggleSwitch");
+        assert_eq!(toggles.len(), 2, "one switch per helper");
+        for toggle in toggles {
+            let rect = toggle.screen_bounds;
+            assert!(
+                rect.width > 0.0 && rect.height > 0.0 && contains(panel, rect),
+                "a helper switch {rect:?} must sit inside the panel {panel:?}"
+            );
+        }
+        for text in ["Follow my octave", "Show keys by default"] {
+            let label = node_with_property(&nodes, "text", text).screen_bounds;
+            assert!(
+                label.width > 0.0 && label.height > 0.0 && contains(panel, label),
+                "{text:?} at {label:?} must sit inside the panel {panel:?}"
+            );
+        }
+    }
+
+    /// The wrapped captions and the fading-scaffolds footer stay on the
+    /// panel below the switches.
+    #[test]
+    fn captions_and_footer_stay_on_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        for caption in [FOLLOW_OCTAVE_CAPTION, KEYS_DEFAULT_CAPTION, FOOTER_CAPTION] {
+            let head: String = caption.chars().take(24).collect();
+            let rect = node_with_property_prefix(&nodes, "text", &head).screen_bounds;
+            assert!(
+                rect.width > 0.0 && rect.height > 0.0 && contains(panel, rect),
+                "the caption {head:?} at {rect:?} must sit inside the panel {panel:?}"
+            );
+        }
+    }
+
+    /// Nothing may leave the panel (this sheet has no scrolling area).
+    #[test]
+    fn nothing_is_laid_out_off_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let outside = nodes_outside_panel(&nodes);
+        assert!(
+            outside.is_empty(),
+            "widgets laid out off the panel:\n{}",
+            describe(&outside)
+        );
+    }
+}

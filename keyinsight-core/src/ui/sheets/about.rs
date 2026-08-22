@@ -234,3 +234,99 @@ mod tests {
         assert!(matches!(SECTIONS[1].1.last(), Some(Block::Paragraph(_))));
     }
 }
+
+/// Layout regression tests: the header keeps its own height so the body
+/// scrolls in the rest of the panel (the Library search-box failure
+/// class, where a chrome row swells and shoves content off the sheet).
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui::sheets::layout_test_support::{
+        contains, describe, first_of_type, laid_out_nodes, node_with_property,
+        node_with_property_prefix, nodes_outside_panel, panel_rect, WINDOW,
+    };
+    use crate::ui::side_panel::{open_cell, SidePanelCells};
+    use agg_gui::geometry::Rect;
+    use agg_gui::widget::InspectorNode;
+
+    /// Build the sheet and open it exactly as the bar's About button does.
+    fn opened_sheet_nodes() -> Vec<InspectorNode> {
+        let fonts = UiFonts::bundled();
+        let cells = SidePanelCells::new();
+        let mut sheet = build_about_sheet(&fonts, &cells);
+        open_cell(&cells.show_about);
+        laid_out_nodes(&mut sheet)
+    }
+
+    /// The Swift `idealWidth: 620, idealHeight: 640` frame, clamped to
+    /// the window.
+    #[test]
+    fn panel_is_the_swift_ideal_frame_clamped_to_the_window() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        assert_eq!(panel.width, SHEET_SIZE.width);
+        assert_eq!(panel.height, SHEET_SIZE.height.min(WINDOW.height - 48.0));
+        assert!(
+            contains(Rect::new(0.0, 0.0, WINDOW.width, WINDOW.height), panel),
+            "panel {panel:?} must sit inside the window"
+        );
+    }
+
+    /// The header row is title-high, with Done reachable on the panel.
+    #[test]
+    fn header_keeps_its_own_height_with_done_on_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let header = first_of_type(&nodes, "FlexRow").screen_bounds;
+        // The Swift header is a title (26pt) inside a 14pt-padded row:
+        // 54pt. Anything materially taller means the row stretched into
+        // the content below it.
+        assert!(
+            header.height <= 60.0,
+            "the header must keep its own height, got {header:?} of the panel {panel:?}"
+        );
+        let done = node_with_property(&nodes, "label", "Done").screen_bounds;
+        assert!(
+            done.width > 0.0 && done.height > 0.0 && contains(panel, done),
+            "Done {done:?} must sit inside the panel {panel:?}"
+        );
+    }
+
+    /// The scrolling body owns the panel below the header, with the first
+    /// section title and its copy visible in the viewport.
+    #[test]
+    fn body_text_is_visible_in_the_scrolling_area() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let scroll = first_of_type(&nodes, "ScrollView").screen_bounds;
+        assert!(
+            scroll.height > panel.height / 2.0,
+            "the body must own most of the panel height, got {scroll:?}"
+        );
+        assert!(
+            contains(panel, scroll),
+            "the body {scroll:?} must sit inside the panel {panel:?}"
+        );
+
+        let title = node_with_property(&nodes, "text", SECTIONS[0].0).screen_bounds;
+        let body = node_with_property_prefix(&nodes, "text", "KeyInSight works like").screen_bounds;
+        for (name, rect) in [("the first section title", title), ("its body copy", body)] {
+            assert!(
+                rect.width > 0.0 && rect.height > 0.0 && contains(scroll, rect),
+                "{name} at {rect:?} must be visible in the viewport {scroll:?}"
+            );
+        }
+    }
+
+    /// Nothing outside the body's clipped content may leave the panel.
+    #[test]
+    fn nothing_is_laid_out_off_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let outside = nodes_outside_panel(&nodes);
+        assert!(
+            outside.is_empty(),
+            "widgets laid out off the panel:\n{}",
+            describe(&outside)
+        );
+    }
+}

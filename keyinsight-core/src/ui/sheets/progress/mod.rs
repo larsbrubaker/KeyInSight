@@ -234,3 +234,145 @@ fn build_content(
 
     Box::new(column)
 }
+
+/// Layout regression tests: the sheet's chrome (header, the two fixed
+/// heat staves, the footer) must keep its own height so the scrolling
+/// list gets the rest of the panel — the Library search-box failure
+/// class, where one row reports "fill everything" and shoves the
+/// content off the sheet.
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui::sheets::layout_test_support::{
+        contains, describe, first_of_type, laid_out_nodes, node_with_property,
+        node_with_property_prefix, nodes_outside_panel, panel_rect, shared_test_engine, test_clock,
+        WINDOW,
+    };
+    use crate::ui::side_panel::{open_cell, SidePanelCells};
+    use agg_gui::geometry::Rect;
+    use agg_gui::widget::InspectorNode;
+
+    /// Build the sheet and open it exactly as the bar's Progress button
+    /// does: bump the generation, then set the visibility cell.
+    fn opened_sheet_nodes() -> Vec<InspectorNode> {
+        let engine = shared_test_engine();
+        let fonts = UiFonts::bundled();
+        let cells = SidePanelCells::new();
+        let clock = test_clock();
+        let mut sheet = build_progress_sheet(&engine, &fonts, &clock, &cells);
+
+        cells.progress_generation.set(cells.progress_generation.get() + 1);
+        open_cell(&cells.show_progress);
+        laid_out_nodes(&mut sheet)
+    }
+
+    /// The Swift `idealWidth: 860, idealHeight: 720` frame, clamped to
+    /// the window (the sheet is taller than a 640-high window).
+    #[test]
+    fn panel_is_the_swift_ideal_frame_clamped_to_the_window() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        assert_eq!(panel.width, SHEET_SIZE.width);
+        assert_eq!(panel.height, SHEET_SIZE.height.min(WINDOW.height - 48.0));
+        assert!(
+            contains(Rect::new(0.0, 0.0, WINDOW.width, WINDOW.height), panel),
+            "panel {panel:?} must sit inside the window"
+        );
+    }
+
+    /// The header row is title-high — it must not grow into the staves
+    /// and the list below it.
+    #[test]
+    fn header_keeps_its_own_height_with_done_on_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let header = first_of_type(&nodes, "FlexRow").screen_bounds;
+        // The Swift header is a title (26pt) inside a 14pt-padded row:
+        // 54pt. Anything materially taller means the row stretched into
+        // the content below it.
+        assert!(
+            header.height <= 60.0,
+            "the header must keep its own height, got {header:?} of the panel {panel:?}"
+        );
+        let done = node_with_property(&nodes, "label", "Done").screen_bounds;
+        assert!(
+            done.width > 0.0 && done.height > 0.0 && contains(panel, done),
+            "Done {done:?} must sit inside the panel {panel:?}"
+        );
+    }
+
+    /// One `.frame(height: 150)` heat staff per hand, both on the panel.
+    #[test]
+    fn both_heat_staves_keep_their_fixed_height() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let staves: Vec<Rect> = nodes
+            .iter()
+            .filter(|node| node.type_name == "NotationWidget")
+            .map(|node| node.screen_bounds)
+            .collect();
+        assert_eq!(staves.len(), 2, "one heat staff per hand");
+        for staff in staves {
+            assert_eq!(staff.height, STAFF_HEIGHT);
+            assert!(
+                contains(panel, staff),
+                "heat staff {staff:?} must sit inside the panel {panel:?}"
+            );
+        }
+    }
+
+    /// The list scrolls in what's left between the staves and the
+    /// footer, with real rows visible and the footer below it.
+    #[test]
+    fn list_rows_and_footer_share_the_panel_below_the_staves() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+
+        let scroll = first_of_type(&nodes, "ScrollView").screen_bounds;
+        assert!(
+            scroll.height > 100.0,
+            "the list needs the room left below the staves, got {scroll:?}"
+        );
+        assert!(
+            contains(panel, scroll),
+            "the list {scroll:?} must sit inside the panel {panel:?}"
+        );
+
+        // The first section header and the first note row are visible in
+        // the list's viewport, not scrolled off or zero-sized.
+        for text in ["Recent exercises", "Notes · right hand"] {
+            let row = node_with_property_prefix(&nodes, "text", text).screen_bounds;
+            assert!(
+                row.width > 0.0 && row.height > 0.0 && contains(scroll, row),
+                "{text:?} at {row:?} must be visible in the list viewport {scroll:?}"
+            );
+        }
+
+        // The unlock footer sits on the panel, below the list.
+        let footer = node_with_property_prefix(&nodes, "text", "Next unlock").screen_bounds;
+        assert!(
+            footer.width > 0.0 && footer.height > 0.0,
+            "the unlock footer must have a size, got {footer:?}"
+        );
+        assert!(
+            contains(panel, footer),
+            "the unlock footer {footer:?} must sit inside the panel {panel:?}"
+        );
+        assert!(
+            footer.y + footer.height <= scroll.y + 0.5,
+            "the footer {footer:?} belongs below the list {scroll:?}"
+        );
+    }
+
+    /// Nothing outside the list's clipped content may leave the panel.
+    #[test]
+    fn nothing_is_laid_out_off_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let outside = nodes_outside_panel(&nodes);
+        assert!(
+            outside.is_empty(),
+            "widgets laid out off the panel:\n{}",
+            describe(&outside)
+        );
+    }
+}

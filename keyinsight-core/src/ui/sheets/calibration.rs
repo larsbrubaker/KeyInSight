@@ -416,3 +416,101 @@ mod tests {
         );
     }
 }
+
+/// Layout regression tests: the intro copy, the status readout and the
+/// Start/Cancel buttons all fit the 440×260 panel (the Library
+/// search-box failure class, where a chrome row swells and shoves the
+/// content off the sheet).
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui::sheets::layout_test_support::{
+        contains, describe, laid_out_nodes, node_with_property, node_with_property_prefix,
+        nodes_outside_panel, panel_rect, shared_test_engine, test_clock, WINDOW,
+    };
+    use crate::ui::side_panel::{open_cell, SidePanelCells};
+    use agg_gui::widget::InspectorNode;
+
+    /// Build the sheet and open it exactly as the setup panel's
+    /// Calibrate… button does.
+    fn opened_sheet_nodes() -> Vec<InspectorNode> {
+        let engine = shared_test_engine();
+        let fonts = UiFonts::bundled();
+        let cells = SidePanelCells::new();
+        let clock = test_clock();
+        let mut sheet = build_calibration_sheet(&engine, &fonts, &clock, &cells);
+        open_cell(&cells.show_calibration);
+        laid_out_nodes(&mut sheet)
+    }
+
+    /// The Swift `.frame(width: 440)` panel, centered in the window.
+    #[test]
+    fn panel_is_the_swift_fixed_frame() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        assert_eq!(panel.width, SHEET_SIZE.width);
+        assert_eq!(panel.height, SHEET_SIZE.height);
+        assert!(
+            contains(Rect::new(0.0, 0.0, WINDOW.width, WINDOW.height), panel),
+            "panel {panel:?} must sit inside the window"
+        );
+    }
+
+    /// The idle sheet shows Start over Cancel, both clickable on the
+    /// panel — the sheet is useless if either falls off.
+    #[test]
+    fn start_and_cancel_sit_inside_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let start = node_with_property(&nodes, "label", "Start").screen_bounds;
+        let cancel = node_with_property(&nodes, "label", "Cancel").screen_bounds;
+        for (name, rect) in [("Start", start), ("Cancel", cancel)] {
+            assert!(
+                rect.width > 0.0 && rect.height > 0.0,
+                "{name} must have a non-zero size, got {rect:?}"
+            );
+            assert!(
+                contains(panel, rect),
+                "{name} at {rect:?} must sit inside the panel {panel:?}"
+            );
+        }
+        // Y-up: Start is the higher of the two.
+        assert!(
+            start.y > cancel.y,
+            "Start {start:?} sits above Cancel {cancel:?}"
+        );
+    }
+
+    /// The title and the wrapped instructions stay on the panel above
+    /// the buttons.
+    #[test]
+    fn title_and_instructions_stay_above_the_buttons() {
+        let nodes = opened_sheet_nodes();
+        let panel = panel_rect(&nodes);
+        let title = node_with_property(&nodes, "text", "Latency Calibration").screen_bounds;
+        let copy = node_with_property_prefix(&nodes, "text", "Tap any piano key").screen_bounds;
+        let start = node_with_property(&nodes, "label", "Start").screen_bounds;
+        for (name, rect) in [("the title", title), ("the instructions", copy)] {
+            assert!(
+                rect.width > 0.0 && rect.height > 0.0 && contains(panel, rect),
+                "{name} at {rect:?} must sit inside the panel {panel:?}"
+            );
+            assert!(
+                rect.y >= start.y + start.height - 0.5,
+                "{name} at {rect:?} belongs above Start {start:?}"
+            );
+        }
+    }
+
+    /// Nothing may leave the panel (this sheet has no scrolling area).
+    #[test]
+    fn nothing_is_laid_out_off_the_panel() {
+        let nodes = opened_sheet_nodes();
+        let outside = nodes_outside_panel(&nodes);
+        assert!(
+            outside.is_empty(),
+            "widgets laid out off the panel:\n{}",
+            describe(&outside)
+        );
+    }
+}
