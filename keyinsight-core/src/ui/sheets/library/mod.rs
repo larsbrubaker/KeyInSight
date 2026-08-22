@@ -9,6 +9,8 @@
 //! cells; every change bumps `list_generation` so the [`Rebuilder`]
 //! re-runs the query — the SwiftUI `@State` → body re-evaluation.
 
+#[cfg(test)]
+mod layout_tests;
 mod model;
 
 use std::cell::{Cell, RefCell};
@@ -365,6 +367,11 @@ fn search_box(fonts: &UiFonts, filter: &Rc<Filter>) -> Container {
     Container::new()
         .with_background(Color::rgba(0.5, 0.5, 0.5, 0.12))
         .with_corner_radius(7.0)
+        // Without this the Container reports the full available height
+        // (its legacy stretch default), the toolbar row swells to the
+        // whole panel, and the list plus footer are pushed off the
+        // bottom of the sheet.
+        .with_fit_height(true)
         .with_inner_padding(Insets {
             left: 6.0,
             right: 6.0,
