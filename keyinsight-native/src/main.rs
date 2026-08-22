@@ -7,6 +7,17 @@
 //! implementation (file-backed storage under the OS app-data directory,
 //! MIDI via midir, audio out + mic via cpal — see
 //! `docs/platform-substitutions.md`) and the per-frame engine tick.
+//!
+//! Dev / diagnostic launch flags:
+//!
+//! - `--audio-smoke`, `--mic-smoke`, `--midi-smoke` — headless device checks
+//! - `--demo` — the scripted, headless playthrough
+//! - `--piece <slug>` — open straight into a bundled piece
+//! - `--survival` — start a survival run
+//! - `--library`, `--progress`, `--about`, `--profile`, `--calibration` —
+//!   open that sheet at launch
+//! - `--screenshot <path>` — paint a few settle frames, write the window to
+//!   `<path>` as a PNG (physical pixels: 2x on Retina), then exit
 
 mod audio;
 mod midi;
@@ -155,6 +166,10 @@ impl KeyInSightPlatform for NativePlatform {
     }
 }
 
+/// Frames painted before `--screenshot` captures, so fonts, layout and
+/// start-up animations have settled.
+const SCREENSHOT_SETTLE_FRAMES: u32 = 6;
+
 fn main() {
     // Headless audio diagnostic: play a C-major arpeggio + two clicks
     // through the real output path and exit (`keyinsight-native --audio-smoke`).
@@ -202,16 +217,39 @@ fn main() {
     if std::env::args().any(|arg| arg == "--survival") {
         handles.engine.borrow_mut().enter_survival();
     }
-    // Dev convenience (the Swift `--library` launch hook): open the
-    // Library sheet straight away.
+    // Dev convenience (the Swift `--library` launch hook, plus the same
+    // hook for the other sheets): open one straight away.
     if std::env::args().any(|arg| arg == "--library") {
         handles.open_library();
     }
+    if std::env::args().any(|arg| arg == "--progress") {
+        handles.open_progress();
+    }
+    if std::env::args().any(|arg| arg == "--about") {
+        handles.open_about();
+    }
+    if std::env::args().any(|arg| arg == "--profile") {
+        handles.open_profile();
+    }
+    if std::env::args().any(|arg| arg == "--calibration") {
+        handles.open_calibration();
+    }
+
+    // The Swift TrainingView's minWidth 1180 / minHeight 520.
+    let mut config = demo_wgpu::NativeShellConfig::new("KeyInSight", (1180.0, 640.0))
+        .with_min_size(1180.0, 520.0);
+    // Deterministic capture (`--screenshot <path>`): paint a few settle
+    // frames, write the window as a PNG, and exit.
+    if let Some(path) = args
+        .iter()
+        .position(|arg| arg == "--screenshot")
+        .and_then(|i| args.get(i + 1))
+    {
+        config = config.with_screenshot(path, SCREENSHOT_SETTLE_FRAMES);
+    }
 
     demo_wgpu::native_shell::run(
-        // The Swift TrainingView's minWidth 1180 / minHeight 520.
-        demo_wgpu::NativeShellConfig::new("KeyInSight", (1180.0, 640.0))
-            .with_min_size(1180.0, 520.0),
+        config,
         app,
         // Advance the engine every painted frame (input queue, deferred
         // actions, metronome sweep).

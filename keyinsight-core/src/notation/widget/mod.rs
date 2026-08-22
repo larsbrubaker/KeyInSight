@@ -262,10 +262,8 @@ impl Widget for NotationWidget {
                 pos,
                 button: MouseButton::Left,
                 ..
-            } => {
-                if self.route_click(*pos) {
-                    return EventResult::Consumed;
-                }
+            } if self.route_click(*pos) => {
+                return EventResult::Consumed;
             }
             _ => {}
         }

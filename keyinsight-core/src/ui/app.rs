@@ -84,6 +84,16 @@ pub struct KeyInSightHandles {
     show_library: Rc<std::cell::Cell<bool>>,
     /// Bumped per open so the sheet's rows re-read their play stats.
     library_generation: Rc<std::cell::Cell<u64>>,
+    /// The Progress sheet's visibility cell (the `--progress` hook).
+    show_progress: Rc<std::cell::Cell<bool>>,
+    /// Bumped per open so the sheet re-queries the engine.
+    progress_generation: Rc<std::cell::Cell<u64>>,
+    /// The About sheet's visibility cell (the `--about` hook).
+    show_about: Rc<std::cell::Cell<bool>>,
+    /// The Profile sheet's visibility cell (the `--profile` hook).
+    show_profile: Rc<std::cell::Cell<bool>>,
+    /// The Calibration sheet's visibility cell (the `--calibration` hook).
+    show_calibration: Rc<std::cell::Cell<bool>>,
 }
 
 impl KeyInSightHandles {
@@ -92,6 +102,32 @@ impl KeyInSightHandles {
         self.library_generation
             .set(self.library_generation.get() + 1);
         side_panel::open_cell(&self.show_library);
+    }
+
+    /// Open the Progress sheet (the `--progress` launch hook). Bumps the
+    /// generation exactly like the Progress button, so the sheet
+    /// re-queries the engine on open.
+    pub fn open_progress(&self) {
+        self.progress_generation
+            .set(self.progress_generation.get() + 1);
+        side_panel::open_cell(&self.show_progress);
+    }
+
+    /// Open the About sheet (the `--about` launch hook).
+    pub fn open_about(&self) {
+        side_panel::open_cell(&self.show_about);
+    }
+
+    /// Open the player Profile sheet (the `--profile` launch hook). The
+    /// bottom-bar button is disabled without a current player; the hook
+    /// opens it regardless (the sheet renders its no-player state).
+    pub fn open_profile(&self) {
+        side_panel::open_cell(&self.show_profile);
+    }
+
+    /// Open the Calibration sheet (the `--calibration` launch hook).
+    pub fn open_calibration(&self) {
+        side_panel::open_cell(&self.show_calibration);
     }
 
     /// Advance the engine (input queue, deferred actions, metronome sweep).
@@ -345,6 +381,11 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
             engine,
             show_library: Rc::clone(&cells.show_library),
             library_generation: Rc::clone(&cells.library_generation),
+            show_progress: Rc::clone(&cells.show_progress),
+            progress_generation: Rc::clone(&cells.progress_generation),
+            show_about: Rc::clone(&cells.show_about),
+            show_profile: Rc::clone(&cells.show_profile),
+            show_calibration: Rc::clone(&cells.show_calibration),
         },
     )
 }
@@ -394,4 +435,42 @@ fn inspection_overlay(
     )
     .with_h_anchor(HAnchor::LEFT)
     .with_v_anchor(VAnchor::TOP)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ui::fonts::UiFonts;
+
+    struct NoopPlatform;
+    impl KeyInSightPlatform for NoopPlatform {}
+
+    /// Every `--<sheet>` launch hook must raise the same visibility cell
+    /// (and bump the same generation counter) its toolbar button does.
+    #[test]
+    fn launch_hooks_open_their_sheets() {
+        let (_app, handles) = build_keyinsight_app(UiFonts::bundled(), NoopPlatform);
+
+        assert!(!handles.show_library.get());
+        handles.open_library();
+        assert!(handles.show_library.get());
+        assert_eq!(handles.library_generation.get(), 1);
+
+        assert!(!handles.show_progress.get());
+        handles.open_progress();
+        assert!(handles.show_progress.get());
+        assert_eq!(handles.progress_generation.get(), 1);
+
+        assert!(!handles.show_about.get());
+        handles.open_about();
+        assert!(handles.show_about.get());
+
+        assert!(!handles.show_profile.get());
+        handles.open_profile();
+        assert!(handles.show_profile.get());
+
+        assert!(!handles.show_calibration.get());
+        handles.open_calibration();
+        assert!(handles.show_calibration.get());
+    }
 }
