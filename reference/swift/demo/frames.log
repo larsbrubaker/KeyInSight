@@ -1,0 +1,43 @@
+1787359495.789990000 frame-1 demo: starting scripted playthrough
+1787359496.448115000 frame-2 demo: starting scripted playthrough
+1787359497.088597000 frame-3 demo: injected wrong note (expected E4)
+1787359497.727409000 frame-4 demo: injected wrong note (expected E4)
+1787359498.357020000 frame-5 demo: exercise 2 complete — 5 notes, 1 errors, streak 3
+1787359499.003115000 frame-6 demo: exercise 2 complete — 5 notes, 1 errors, streak 3
+1787359499.632073000 frame-7 demo: exercise 3 complete — 6 notes, 0 errors, streak 9
+1787359500.284129000 frame-8 demo: exercise 4 complete — 6 notes, 0 errors, streak 15
+1787359500.964183000 frame-9 demo: exercise 4 complete — 6 notes, 0 errors, streak 15
+1787359501.620872000 frame-10 demo: exercise 5 complete — 6 notes, 0 errors, streak 21
+1787359502.479658000 frame-11 demo: tempo exercise started — 6 notes at 60 BPM
+1787359503.246594000 frame-12 demo: tempo exercise started — 6 notes at 60 BPM
+1787359503.961196000 frame-13 demo: tempo exercise started — 6 notes at 60 BPM
+1787359504.708853000 frame-14 demo: tempo exercise started — 6 notes at 60 BPM
+1787359506.171854000 frame-15 demo: tempo exercise started — 6 notes at 60 BPM
+1787359507.506514000 frame-16 demo: tempo exercise started — 6 notes at 60 BPM
+1787359508.748699000 frame-17 demo: tempo exercise started — 6 notes at 60 BPM
+1787359509.534390000 frame-18 demo: tempo exercise started — 6 notes at 60 BPM
+1787359510.361818000 frame-19 demo: tempo exercise started — 6 notes at 60 BPM
+1787359511.157826000 frame-20 demo: tempo exercise started — 6 notes at 60 BPM
+1787359512.194188000 frame-21 demo: injected wrong pitch before note 5
+1787359513.375768000 frame-22 demo: repertoire — Minuet in G: 32 notes, 8 measures, fifths 1
+1787359514.348960000 frame-23 demo: repertoire — Minuet in G: 32 notes, 8 measures, fifths 1
+1787359515.164370000 frame-24 demo: repertoire — Minuet in G: 32 notes, 8 measures, fifths 1
+1787359515.867503000 frame-25 demo: practice-from-here — event 4, measure 1, 28 notes remain
+1787359516.758753000 frame-26 demo: practice-from-here — event 4, measure 1, 28 notes remain
+1787359517.600358000 frame-27 demo: act 3.5 passed (practice-from-here) — starting free-play act
+1787359518.549430000 frame-28 demo: act 4 passed (free play) — starting micro-drill act
+1787359519.310142000 frame-29 demo: act 4 passed (free play) — starting micro-drill act
+1787359520.145016000 frame-30 demo: playback started (system GM piano)
+1787359521.248555000 frame-31 demo: playback started (system GM piano)
+1787359521.958148000 frame-32 demo: playback started (system GM piano)
+1787359522.683864000 frame-33 demo: playback started (system GM piano)
+1787359523.451913000 frame-34 demo: playback started (system GM piano)
+1787359525.149631000 frame-35 demo: follow audit — 6 notes at 90 BPM
+1787359532.289955000 frame-36 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359533.218324000 frame-37 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359534.019308000 frame-38 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359534.724603000 frame-39 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359535.506489000 frame-40 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359536.200960000 frame-41 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359538.332693000 frame-42 demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+1787359539.885332000 frame-43 demo: OK — unlock, tempo, repertoire, free play, drill, playback, self-verify, and survival all verified

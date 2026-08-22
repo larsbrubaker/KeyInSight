@@ -1,0 +1,53 @@
+demo: starting scripted playthrough
+demo: injected wrong note (expected E4)
+demo: exercise 1 complete — 5 notes, 1 errors, streak 3
+demo: injected wrong note (expected E4)
+demo: exercise 2 complete — 5 notes, 1 errors, streak 3
+demo: exercise 3 complete — 6 notes, 0 errors, streak 9
+demo: exercise 4 complete — 6 notes, 0 errors, streak 15
+demo: exercise 5 complete — 6 notes, 0 errors, streak 21
+demo: exercise 6 complete — 7 notes, 0 errors, streak 28, UNLOCKED A4
+demo: act 1 passed (unlock earned) — switching to tempo mode
+demo: tempo exercise started — 6 notes at 60 BPM
+demo: injected wrong pitch before note 5
+demo: tempo exercise complete — 3 on time, 1 early, 1 late, 1 missed, 2 errors, mean offset 39 ms
+demo: act 2 passed (tempo classification) — starting repertoire act
+demo: repertoire — Minuet in G: 32 notes, 8 measures, fifths 1
+demo: piece complete — Minuet in G, 31/32 first try, worst measure 2 (1 errors)
+demo: --- progress report ---
+demo:   C4   heat=mastered attempts=8 err=0% ✓mastered
+demo:   D4   heat=mastered attempts=5 err=0% ✓mastered
+demo:   E4   heat=learning attempts=12 err=31%
+demo:   F4   heat=learning attempts=11 err=25%
+demo:   G4   heat=mastered attempts=13 err=4% ✓mastered
+demo:   A4   heat=mastered attempts=5 err=0% ✓mastered
+demo: unlocked items: 6/20, tempo 60 BPM, rhythm level 0
+demo: piece stats — plays 1, best 97%
+demo: act 3 passed (repertoire) — starting practice-from-here act
+demo: practice-from-here — event 4, measure 1, 28 notes remain
+demo: partial replay complete — 28/28 first try, plays 1 (was 1)
+demo: act 3.5 passed (practice-from-here) — starting free-play act
+demo: free play — 5 notes mirrored, last E5
+demo: act 4 passed (free play) — starting micro-drill act
+demo: drill complete — 12 cards, 12 first try, mean 68 ms
+demo: --- progress report ---
+demo:   B3   heat=learning attempts=0 err=—
+demo:   C4   heat=mastered attempts=11 err=0% ✓mastered
+demo:   D4   heat=mastered attempts=7 err=0% ✓mastered
+demo:   E4   heat=mastered attempts=15 err=13% ✓mastered
+demo:   F4   heat=mastered attempts=13 err=14% ✓mastered
+demo:   G4   heat=mastered attempts=21 err=0% ✓mastered
+demo:   A4   heat=mastered attempts=10 err=0% ✓mastered
+demo: unlocked items: 7/20, tempo 60 BPM, rhythm level 0
+demo: act 5 passed (drill) — playback smoke test
+demo: playback started (system GM piano)
+demo: follow audit — 6 notes at 90 BPM
+demo: act 6 passed (playback + follow cursor painted all 6 notes)
+demo: self-verify — graded Try Again (pass 1)
+demo: self-verify complete — 6 notes, 1 repeated pass, recorded to item stats
+demo: survival started — 15 notes in chunk 1, C major · 4/4 · 15 notes · two hands
+demo: survival — injected wrong note 1, lives left 2
+demo: survival — injected wrong note 2, lives left 1
+demo: survival — injected wrong note 3, lives left 0
+demo: survival run over — score 42421, 30 notes at 265 npm, difficulty 5.3, NEW BEST
+demo: OK — unlock, tempo, repertoire, free play, drill, playback, self-verify, and survival all verified
