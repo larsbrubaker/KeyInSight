@@ -23,3 +23,6 @@ keyinsight-wasm/pkg
 .claude/*
 !.claude/agents/
 .cursor/
+
+# Swift reference capture helper (built on demand by the capture scripts)
+tools/swift-reference-capture/windowid

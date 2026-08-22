@@ -15,7 +15,6 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use agg_gui::layout_props::HAnchor;
 use agg_gui::widget::Widget;
 use agg_gui::widgets::{Button, Conditional, FlexColumn, FlexRow, Label, SegmentedControl, Tooltip};
 
@@ -36,14 +35,19 @@ pub(super) const PICKER_LABELS: [&str; 3] = ["Input", "Pacing", "Hands"];
 const LABEL_GAP: f64 = 8.0;
 
 /// One labeled segmented picker: `Text(label)` in body type, then the
-/// control taking the rest of the row.
+/// control at its own width.
+///
+/// The track is `add`ed, not `add_flex`ed: AppKit sizes a segmented
+/// control to its segments, so only the four-segment Input picker
+/// reaches the panel edge and the shorter Pacing/Hands tracks stop where
+/// their labels do (`reference/swift/window/training-default.png`).
 fn picker_row(label: &str, fonts: &UiFonts, control: Box<dyn Widget>) -> FlexRow {
     FlexRow::new()
         .with_gap(LABEL_GAP)
         .add(Box::new(
             Label::new(label, Arc::clone(&fonts.regular)).with_font_size(size::BODY),
         ))
-        .add_flex(control, 1.0)
+        .add(control)
 }
 
 /// `InputSource.allCases` — segment order of the Input picker.
@@ -76,7 +80,6 @@ pub(super) fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelC
         let picker = SegmentedControl::new(labels, selected, Arc::clone(&fonts.regular))
             .with_font_size(size::CALLOUT)
             .with_fit_width(true)
-            .with_h_anchor(HAnchor::STRETCH)
             .on_change(move |index| click.borrow_mut().set_input_source(INPUT_SOURCES[index]));
         column = column.add(Box::new(picker_row(
             PICKER_LABELS[0],
@@ -117,7 +120,6 @@ pub(super) fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelC
         let picker = SegmentedControl::new(labels, selected, Arc::clone(&fonts.regular))
             .with_font_size(size::CALLOUT)
             .with_fit_width(true)
-            .with_h_anchor(HAnchor::STRETCH)
             .with_enabled_fn(move || {
                 let engine = enabled.borrow();
                 engine.input_source().supports_timing() && engine.content_supports_tempo()
@@ -139,7 +141,6 @@ pub(super) fn setup_section(engine: &Engine, fonts: &UiFonts, cells: &SidePanelC
         let picker = SegmentedControl::new(labels, selected, Arc::clone(&fonts.regular))
             .with_font_size(size::CALLOUT)
             .with_fit_width(true)
-            .with_h_anchor(HAnchor::STRETCH)
             .on_change(move |index| click.borrow_mut().set_hand_mode(HandMode::ALL[index]));
         let row = picker_row(
             PICKER_LABELS[2],
@@ -224,9 +225,36 @@ mod tests {
         }
     }
 
-    /// The widest picker (Input, four segments) must not clip its labels
-    /// in the room its row leaves — the 300-pt panel less its 14-pt
-    /// padding, the "Input" label, and the label gap.
+    /// Minimum breathing room a segment must keep around its label, in
+    /// logical pixels — AppKit pads a segmented control's segments well
+    /// past this, so anything tighter means the track was squeezed.
+    const MIN_SEGMENT_PADDING: f64 = 4.0;
+
+    /// The per-segment widths of a laid-out control, recovered from its
+    /// label children: `SegmentedControl::layout` butts the segments
+    /// together from x = 0 and centers each label in its own segment, so
+    /// a label's center is its segment's center.
+    #[cfg(test)]
+    fn segment_widths(picker: &SegmentedControl) -> Vec<f64> {
+        use agg_gui::widget::Widget;
+
+        let mut x = 0.0;
+        picker
+            .children()
+            .iter()
+            .map(|child| {
+                let center = child.bounds().x + child.bounds().width / 2.0;
+                let width = 2.0 * (center - x);
+                x += width;
+                width
+            })
+            .collect()
+    }
+
+    /// The widest picker (Input, four segments) must fit the room its row
+    /// leaves — the 300-pt panel less its 14-pt padding, the "Input"
+    /// label, and the label gap — with every segment still padded around
+    /// its label rather than squeezed onto it.
     #[test]
     fn input_picker_labels_fit_the_panel_width() {
         use agg_gui::geometry::Size;
@@ -238,23 +266,21 @@ mod tests {
         let mut picker =
             SegmentedControl::new(labels, Rc::new(Cell::new(0)), Arc::clone(&fonts.regular))
                 .with_font_size(size::CALLOUT)
-                .with_fit_width(true)
-                .with_h_anchor(HAnchor::STRETCH);
+                .with_fit_width(true);
         let inner = PANEL_WIDTH - 2.0 * 14.0 - label_width(&fonts, PICKER_LABELS[0]) - LABEL_GAP;
         let size = picker.layout(Size::new(inner, 0.0));
         assert!(
-            (size.width - inner).abs() < 1.0,
-            "the picker fills its row: {} of {inner}",
+            size.width <= inner + 0.5,
+            "the track must fit its row: {} of {inner}",
             size.width
         );
-        // A segment that cannot hold its label lays the label out clipped
-        // to the segment width, so a full-width label means it fits.
-        for label in picker.children_mut() {
-            let placed = label.bounds().width;
+        let widths = segment_widths(&picker);
+        assert_eq!(widths.len(), INPUT_SOURCES.len());
+        for (segment, label) in widths.iter().zip(picker.children_mut().iter_mut()) {
             let natural = label.layout(Size::new(inner, size.height)).width;
             assert!(
-                placed + 0.5 >= natural,
-                "label needs {natural} px but was placed in {placed} px"
+                natural + MIN_SEGMENT_PADDING <= segment + 0.5,
+                "a segment holding a {natural}-px label needs at least                  {MIN_SEGMENT_PADDING} px of padding, but is only {segment} px wide"
             );
         }
     }
@@ -269,18 +295,17 @@ mod tests {
         label.layout(Size::new(PANEL_WIDTH, 0.0)).width
     }
 
-    /// Every segmented picker keeps the leading label macOS draws for
-    /// `Picker("Input", …)` — the label sits to the left of its control,
-    /// at the width its text measures.
-    #[test]
-    fn every_picker_row_carries_its_label() {
+    /// The setup block laid out at the panel's inner width, with the
+    /// Hands row visible (training, no active piece): the flat
+    /// screen-space widget snapshot.
+    #[cfg(test)]
+    fn setup_section_nodes() -> (UiFonts, Vec<agg_gui::widget::InspectorNode>) {
         use agg_gui::geometry::{Point, Rect, Size};
         use agg_gui::widget::{collect_inspector_nodes, InspectorNode, Widget};
         use crate::ui::side_panel::{refresh_visibility_cells, test_engine, SidePanelCells};
         use std::cell::RefCell;
 
         let engine: Engine = Rc::new(RefCell::new(test_engine()));
-        // Training (no active piece) so the Hands row is visible.
         engine.borrow_mut().resume_training();
         refresh_visibility_cells(&engine.borrow());
 
@@ -294,12 +319,28 @@ mod tests {
 
         let mut nodes: Vec<InspectorNode> = Vec::new();
         collect_inspector_nodes(&column, 0, Point::new(0.0, 0.0), &mut nodes);
-        let controls: Vec<Rect> = nodes
+        (fonts, nodes)
+    }
+
+    /// The three segmented tracks, in panel order (Input, Pacing, Hands).
+    #[cfg(test)]
+    fn picker_tracks(nodes: &[agg_gui::widget::InspectorNode]) -> Vec<agg_gui::geometry::Rect> {
+        let tracks: Vec<agg_gui::geometry::Rect> = nodes
             .iter()
             .filter(|n| n.type_name == "SegmentedControl")
             .map(|n| n.screen_bounds)
             .collect();
-        assert_eq!(controls.len(), 3, "Input, Pacing and Hands");
+        assert_eq!(tracks.len(), 3, "Input, Pacing and Hands");
+        tracks
+    }
+
+    /// Every segmented picker keeps the leading label macOS draws for
+    /// `Picker("Input", …)` — the label sits to the left of its control,
+    /// at the width its text measures.
+    #[test]
+    fn every_picker_row_carries_its_label() {
+        let (fonts, nodes) = setup_section_nodes();
+        let controls = picker_tracks(&nodes);
 
         for (control, text) in controls.iter().zip(PICKER_LABELS.iter()) {
             let expected = label_width(&fonts, text);
@@ -313,7 +354,42 @@ mod tests {
             });
             assert!(
                 found,
-                "the {text} picker must carry a {expected}-px \"{text}\" label to the left of                  its control at {control:?}"
+                "the {text} picker must carry a {expected}-px \"{text}\" label \
+                 to the left of its control at {control:?}"
+            );
+        }
+    }
+
+    /// AppKit sizes a segmented control to its segments, so only the
+    /// four-segment Input track reaches the panel edge — the two- and
+    /// four-segment Pacing and Hands tracks stop where their (shorter)
+    /// labels end (`reference/swift/window/training-default.png`).
+    /// Stretching every track to the row width lines all three right
+    /// edges up at the panel edge, which is the bug this guards.
+    #[test]
+    fn picker_tracks_hug_their_segments() {
+        let (_, nodes) = setup_section_nodes();
+        let controls = picker_tracks(&nodes);
+        let panel_right = PANEL_WIDTH - 2.0 * 14.0;
+
+        for (control, text) in controls.iter().zip(PICKER_LABELS.iter()) {
+            assert!(
+                control.x + control.width <= panel_right + 0.5,
+                "the {text} track {control:?} must fit inside the {panel_right}-px panel"
+            );
+        }
+        // Input is the widest: four segments, one of them "Unplugged".
+        let input_right = controls[0].x + controls[0].width;
+        assert!(
+            input_right >= panel_right - 2.0,
+            "the Input track must reach the panel edge, ends at {input_right} of {panel_right}"
+        );
+        for (control, text) in controls[1..].iter().zip(PICKER_LABELS[1..].iter()) {
+            let right = control.x + control.width;
+            assert!(
+                right < panel_right - 8.0,
+                "the {text} track must stop short of the panel edge, \
+                 ends at {right} of {panel_right} — it is stretching, not hugging"
             );
         }
     }

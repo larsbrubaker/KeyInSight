@@ -8,7 +8,15 @@ port (`docs/architecture.md`); compare against
 
 Regenerate with `tools/swift-reference-capture/` (needs the Swift build:
 `cd keyinsight-swift-reference && swift build`, and System Events /
-Screen Recording permission for the terminal):
+Screen Recording permission for the terminal).
+
+The scripts locate the app window through a small helper the repo ships as
+source only (`windowid.swift`); each script builds it on demand, or build it
+once yourself:
+
+```sh
+cd tools/swift-reference-capture && swiftc -O windowid.swift -o windowid
+```
 
 | Dir | How | Contents |
 |---|---|---|

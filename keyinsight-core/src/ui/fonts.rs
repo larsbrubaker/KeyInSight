@@ -38,21 +38,23 @@ pub struct UiFonts {
 
 impl UiFonts {
     /// Parse the bundled faces. Both shells call this once at startup.
+    ///
+    /// The two tabular variants are made with
+    /// `Font::variant_with_tabular_digits`, which shares the parsed
+    /// face's byte `Arc` instead of re-parsing and re-copying it — one
+    /// copy of Inter Regular and one of Inter Bold, not two each.
+    /// agg-gui's shape cache keys on `(data pointer, text, size,
+    /// tabular)`, so the shared pointer still gives the proportional and
+    /// tabular variants their own entries.
     pub fn bundled() -> Self {
+        let regular = Arc::new(Font::from_slice(UI_FONT_BYTES).expect("Inter Regular parses"));
+        let bold = Arc::new(Font::from_slice(UI_BOLD_FONT_BYTES).expect("Inter Bold parses"));
         Self {
-            regular: Arc::new(Font::from_slice(UI_FONT_BYTES).expect("Inter Regular parses")),
-            bold: Arc::new(Font::from_slice(UI_BOLD_FONT_BYTES).expect("Inter Bold parses")),
+            tabular: Arc::new(regular.variant_with_tabular_digits()),
+            bold_tabular: Arc::new(bold.variant_with_tabular_digits()),
+            regular,
+            bold,
             mono: Arc::new(Font::from_slice(MONO_FONT_BYTES).expect("Cascadia Code parses")),
-            tabular: Arc::new(
-                Font::from_slice(UI_FONT_BYTES)
-                    .expect("Inter Regular parses")
-                    .with_tabular_digits(true),
-            ),
-            bold_tabular: Arc::new(
-                Font::from_slice(UI_BOLD_FONT_BYTES)
-                    .expect("Inter Bold parses")
-                    .with_tabular_digits(true),
-            ),
             icons: Arc::new(Font::from_slice(ICON_FONT_BYTES).expect("Font Awesome parses")),
         }
     }

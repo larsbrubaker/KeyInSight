@@ -11,27 +11,24 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use agg_gui::geometry::{Point, Rect, Size};
-use agg_gui::widget::{collect_inspector_nodes, InspectorNode};
+use agg_gui::geometry::Rect;
+use agg_gui::widget::InspectorNode;
 
 use super::{build_library_sheet, SHEET_SIZE};
 use crate::ui::app::{KeyInSightPlatform, SharedPlatform};
 use crate::ui::fonts::UiFonts;
-use crate::ui::side_panel::{open_cell, test_engine, SidePanelCells};
-
-/// A window roughly the size the native shell opens at.
-const WINDOW: Size = Size {
-    width: 1180.0,
-    height: 640.0,
+use crate::ui::sheets::layout_test_support::{
+    contains, describe, first_of_type, laid_out_nodes, nodes_outside_panel, panel_rect, WINDOW,
 };
+use crate::ui::side_panel::{open_cell, test_engine, SidePanelCells};
 
 /// The headless platform: no storage, no audio, no file picker.
 struct TestPlatform;
 impl KeyInSightPlatform for TestPlatform {}
 
 /// Build the sheet, open it exactly as `KeyInSightHandles::open_library`
-/// does (bump the generation, then set the visibility cell), lay it out
-/// at [`WINDOW`], and return the flat screen-space widget snapshot.
+/// does (bump the generation, then set the visibility cell), and lay it
+/// out at the shared [`WINDOW`] size.
 fn opened_sheet_nodes() -> Vec<InspectorNode> {
     let engine = Rc::new(RefCell::new(test_engine()));
     let fonts = UiFonts::bundled();
@@ -41,41 +38,7 @@ fn opened_sheet_nodes() -> Vec<InspectorNode> {
 
     cells.library_generation.set(cells.library_generation.get() + 1);
     open_cell(&cells.show_library);
-
-    sheet.layout(WINDOW);
-    sheet.set_bounds(Rect::new(0.0, 0.0, WINDOW.width, WINDOW.height));
-    // A second pass mirrors the app loop, where layout runs every frame
-    // against bounds the previous pass established.
-    sheet.layout(WINDOW);
-
-    let mut nodes = Vec::new();
-    collect_inspector_nodes(sheet.as_ref(), 0, Point::new(0.0, 0.0), &mut nodes);
-    nodes
-}
-
-/// The first node under the sheet root is the panel column; its rect is
-/// the visible area everything else has to fit inside.
-fn panel_rect(nodes: &[InspectorNode]) -> Rect {
-    nodes
-        .iter()
-        .find(|node| node.depth == 1)
-        .expect("the sheet panel is laid out")
-        .screen_bounds
-}
-
-fn first_of_type<'a>(nodes: &'a [InspectorNode], type_name: &str) -> &'a InspectorNode {
-    nodes
-        .iter()
-        .find(|node| node.type_name == type_name)
-        .unwrap_or_else(|| panic!("the sheet contains a {type_name}"))
-}
-
-/// `inner` lies entirely inside `outer` (Y-up screen coordinates).
-fn contains(outer: Rect, inner: Rect) -> bool {
-    inner.x >= outer.x - 0.5
-        && inner.y >= outer.y - 0.5
-        && inner.x + inner.width <= outer.x + outer.width + 0.5
-        && inner.y + inner.height <= outer.y + outer.height + 0.5
+    laid_out_nodes(&mut sheet)
 }
 
 /// The panel is the Swift `idealWidth: 700, idealHeight: 560` frame,
@@ -152,5 +115,17 @@ fn at_least_one_song_row_is_visible_in_the_panel() {
     assert!(
         rows > 0,
         "at least one song row must be laid out inside the panel {panel:?}"
+    );
+}
+
+/// Nothing outside the list's clipped content may leave the panel.
+#[test]
+fn nothing_is_laid_out_off_the_panel() {
+    let nodes = opened_sheet_nodes();
+    let outside = nodes_outside_panel(&nodes);
+    assert!(
+        outside.is_empty(),
+        "widgets laid out off the panel:\n{}",
+        describe(&outside)
     );
 }

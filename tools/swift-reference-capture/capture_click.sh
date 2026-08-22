@@ -4,6 +4,8 @@
 # (title bar included, window is 1280x572 logical) via System Events, capture.
 set -u
 S=${0:a:h}
+# `windowid` is a build product, not committed — build it on demand.
+[ -x "$S/windowid" ] || swiftc -O "$S/windowid.swift" -o "$S/windowid"
 OUT=$1; CLICKS=$2; shift 2
 BIN=$S/../../keyinsight-swift-reference/.build/debug/KeyInSight
 "$BIN" "$@" >/dev/null 2>&1 & PID=$!

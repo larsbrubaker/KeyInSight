@@ -170,6 +170,34 @@ impl KeyInSightPlatform for NativePlatform {
 /// start-up animations have settled.
 const SCREENSHOT_SETTLE_FRAMES: u32 = 6;
 
+/// What `--screenshot` asked for, as read off the command line.
+#[derive(Debug, PartialEq, Eq)]
+enum ScreenshotArg<'a> {
+    /// The flag is absent: run the app windowed, as usual.
+    Absent,
+    /// `--screenshot <path>`: capture to `<path>` and exit.
+    Path(&'a str),
+    /// `--screenshot` with nothing usable behind it (end of the command
+    /// line, or another flag). Running windowed here would hang a
+    /// capture script that waits for the file, so this is an error.
+    MissingPath,
+}
+
+/// Read the `--screenshot` argument out of `args` (which includes argv[0],
+/// like [`std::env::args`]).
+///
+/// The value must be a real path: anything starting with `--` is the next
+/// flag, not the destination.
+fn screenshot_arg(args: &[String]) -> ScreenshotArg<'_> {
+    let Some(i) = args.iter().position(|arg| arg == "--screenshot") else {
+        return ScreenshotArg::Absent;
+    };
+    match args.get(i + 1) {
+        Some(path) if !path.starts_with("--") => ScreenshotArg::Path(path),
+        _ => ScreenshotArg::MissingPath,
+    }
+}
+
 fn main() {
     // Headless audio diagnostic: play a C-major arpeggio + two clicks
     // through the real output path and exit (`keyinsight-native --audio-smoke`).
@@ -240,12 +268,18 @@ fn main() {
         .with_min_size(1180.0, 520.0);
     // Deterministic capture (`--screenshot <path>`): paint a few settle
     // frames, write the window as a PNG, and exit.
-    if let Some(path) = args
-        .iter()
-        .position(|arg| arg == "--screenshot")
-        .and_then(|i| args.get(i + 1))
-    {
-        config = config.with_screenshot(path, SCREENSHOT_SETTLE_FRAMES);
+    match screenshot_arg(&args) {
+        ScreenshotArg::Path(path) => {
+            config = config.with_screenshot(path, SCREENSHOT_SETTLE_FRAMES);
+        }
+        // Fail loudly: a capture script that waits for the PNG would
+        // otherwise sit in front of an ordinary, never-exiting window.
+        ScreenshotArg::MissingPath => {
+            eprintln!("keyinsight-native: --screenshot needs a file path");
+            eprintln!("usage: keyinsight-native --screenshot <path.png> [other flags]");
+            std::process::exit(2);
+        }
+        ScreenshotArg::Absent => {}
     }
 
     demo_wgpu::native_shell::run(
@@ -401,4 +435,53 @@ fn audio_smoke() {
     println!("audio-smoke: play_smf accepted = {playing}");
     std::thread::sleep(std::time::Duration::from_millis(3500));
     println!("audio-smoke: done");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{screenshot_arg, ScreenshotArg};
+
+    fn args(items: &[&str]) -> Vec<String> {
+        std::iter::once("keyinsight-native")
+            .chain(items.iter().copied())
+            .map(String::from)
+            .collect()
+    }
+
+    #[test]
+    fn no_screenshot_flag_runs_windowed() {
+        assert_eq!(screenshot_arg(&args(&[])), ScreenshotArg::Absent);
+        assert_eq!(screenshot_arg(&args(&["--library"])), ScreenshotArg::Absent);
+    }
+
+    #[test]
+    fn screenshot_takes_the_path_that_follows_it() {
+        assert_eq!(
+            screenshot_arg(&args(&["--screenshot", "shot.png"])),
+            ScreenshotArg::Path("shot.png")
+        );
+        assert_eq!(
+            screenshot_arg(&args(&["--screenshot", "/tmp/a b/shot.png", "--library"])),
+            ScreenshotArg::Path("/tmp/a b/shot.png")
+        );
+    }
+
+    /// `--screenshot` at the end of the command line has no destination.
+    #[test]
+    fn screenshot_without_a_path_is_an_error() {
+        assert_eq!(
+            screenshot_arg(&args(&["--screenshot"])),
+            ScreenshotArg::MissingPath
+        );
+    }
+
+    /// The next flag is not a path — capturing to a file called
+    /// `--library` is never what the caller meant.
+    #[test]
+    fn a_flag_after_screenshot_is_not_a_path() {
+        assert_eq!(
+            screenshot_arg(&args(&["--screenshot", "--library"])),
+            ScreenshotArg::MissingPath
+        );
+    }
 }

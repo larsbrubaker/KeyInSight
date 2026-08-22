@@ -4,6 +4,8 @@
 # matched to states afterwards.
 set -u
 S=${0:a:h}
+# `windowid` is a build product, not committed — build it on demand.
+[ -x "$S/windowid" ] || swiftc -O "$S/windowid.swift" -o "$S/windowid"
 OUT=$1; mkdir -p "$OUT"
 BIN=$S/../../keyinsight-swift-reference/.build/debug/KeyInSight
 "$BIN" --demo 2>&1 | grep --line-buffered "^demo:" > "$OUT/demo.log" & 
