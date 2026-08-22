@@ -28,6 +28,15 @@ Findings parked for later (not in the numbered lists):
 - Side-panel picker tracks stretch to the row (flex 1); Swift's Pacing/Hands
   tracks stop at natural width — one-line anchor change if wanted.
 - `sheets/player_dialogs.rs` has no layout test yet (cheap, same harness).
+- Notation hover: Rust emits only `note`/`rest` inspect kinds; Swift's
+  `preciseKindAt` fallback (NotationController.swift ~L379–391) also names
+  clef/keySig/meterSig/accid/dots/barLine — hit-test `layout.elements` by
+  `ElementKind` in `widget/mod.rs::route_hover`. `HIT_PAD` is applied in
+  layout px in Rust, screen px in Swift (equal only at scale 1). No launch hook
+  reaches a wrong-note ghost state for screenshots (the offscreen paint test in
+  `widget/tests.rs` is the evidence today).
+- agg-gui `dispatch_unconsumed_key` still walks the tree behind a non-passthrough
+  modal (not observable today; ordering is subtle).
 
 agg-gui `stash@{0}` holds someone's earlier WIP from detached `266ed7a`
 (pin_platform_for_testing guard, mac CI matrix, `cargo dev-mac`) — not from
