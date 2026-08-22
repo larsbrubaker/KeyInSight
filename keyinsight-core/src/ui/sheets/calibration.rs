@@ -92,42 +92,9 @@ pub fn build_calibration_sheet(
     // Status readout (result / warm-up / measuring).
     {
         let state = Rc::clone(&state);
-        column = column.add(Box::new(InfoRows::new(fonts, move || {
-            let state = state.borrow();
-            if let Some(result) = state.result {
-                vec![
-                    InfoRow::text(
-                        format!("Measured input latency: {result:.0} ms"),
-                        size::BODY,
-                    )
-                    .with_style(RowStyle::Bold),
-                    InfoRow::text(
-                        "Saved — tempo scoring now compensates for it.",
-                        size::BODY,
-                    )
-                    .with_dim(),
-                ]
-            } else if state.running {
-                if state.warmups_left > 0 {
-                    vec![InfoRow::text(
-                        format!("Warm-up: {} taps left", state.warmups_left),
-                        size::BODY,
-                    )
-                    .with_style(RowStyle::Bold)]
-                } else {
-                    vec![InfoRow::text(
-                        format!(
-                            "Measuring: {} taps left",
-                            MEASURED_TAPS - state.offsets.len()
-                        ),
-                        size::BODY,
-                    )
-                    .with_style(RowStyle::Bold)]
-                }
-            } else {
-                Vec::new()
-            }
-        }).with_centered(true)));
+        column = column.add(Box::new(
+            InfoRows::new(fonts, move || status_rows(&state.borrow())).with_centered(true),
+        ));
     }
 
     // Start (idle) / Done (finished) / Cancel.
@@ -234,6 +201,47 @@ pub fn build_calibration_sheet(
                 esc_engine.borrow_mut().next_exercise();
             }),
     )
+}
+
+/// The status readout: the Swift `if let result … else if running …`
+/// block as pure rows, so the tests can assert their text and faces.
+fn status_rows(state: &CalibState) -> Vec<InfoRow> {
+    if let Some(result) = state.result {
+        vec![
+            InfoRow::text(
+                format!("Measured input latency: {result:.0} ms"),
+                size::BODY,
+            )
+            .with_style(RowStyle::Bold),
+            InfoRow::text(
+                "Saved — tempo scoring now compensates for it.",
+                size::BODY,
+            )
+            .with_dim(),
+        ]
+    } else if state.running {
+        if state.warmups_left > 0 {
+            // Swift: plain `.headline` — this row's number barely moves.
+            vec![InfoRow::text(
+                format!("Warm-up: {} taps left", state.warmups_left),
+                size::BODY,
+            )
+            .with_style(RowStyle::Bold)]
+        } else {
+            // Swift: `.font(.headline).monospacedDigit()` — the count
+            // ticks down every tap, so its digits must not reflow.
+            vec![InfoRow::text(
+                format!(
+                    "Measuring: {} taps left",
+                    MEASURED_TAPS - state.offsets.len()
+                ),
+                size::BODY,
+            )
+            .with_style(RowStyle::BoldTabularDigits)]
+        }
+    } else {
+        Vec::new()
+    }
 }
 
 fn start(engine: &Engine, state: &State, clock: &Clock) {
@@ -415,6 +423,35 @@ mod tests {
             "median ≈ 30 ms, got {measured}"
         );
     }
+
+    /// `CalibrationSheet.swift:40` marks the measuring row
+    /// `.font(.headline).monospacedDigit()`: headline weight with
+    /// tabular figures, so the counting-down number never reflows the
+    /// line. The warm-up and result rows are plain `.headline`.
+    #[test]
+    fn measuring_row_uses_headline_tabular_digits() {
+        let mut state = CalibState::new();
+        state.running = true;
+        assert!(state.warmups_left > 0);
+        let rows = status_rows(&state);
+        assert_eq!(rows[0].text, "Warm-up: 4 taps left");
+        assert_eq!(rows[0].style, RowStyle::Bold, "warm-up is plain headline");
+
+        state.warmups_left = 0;
+        state.offsets.push(30.0);
+        let rows = status_rows(&state);
+        assert_eq!(rows[0].text, "Measuring: 11 taps left");
+        assert_eq!(
+            rows[0].style,
+            RowStyle::BoldTabularDigits,
+            "the measuring count is .headline.monospacedDigit()"
+        );
+
+        state.result = Some(30.0);
+        let rows = status_rows(&state);
+        assert_eq!(rows[0].style, RowStyle::Bold, "the result is plain headline");
+    }
+
 }
 
 /// Layout regression tests: the intro copy, the status readout and the
@@ -511,6 +548,123 @@ mod layout_tests {
             outside.is_empty(),
             "widgets laid out off the panel:\n{}",
             describe(&outside)
+        );
+    }
+}
+
+/// Key-routing regression tests: this sheet is the app's only
+/// `with_key_passthrough` modal, so piano keys keep reaching the engine
+/// while it measures — but Return must NOT fire the side panel's default
+/// action (Next Exercise / Replay / Run It Back) behind the sheet.
+#[cfg(test)]
+mod key_routing_tests {
+    use crate::engine::{InputSource, Phase};
+    use crate::ui::{build_keyinsight_app, KeyInSightPlatform, UiFonts};
+    use agg_gui::event::{Key, Modifiers};
+    use agg_gui::geometry::{Point, Size};
+    use agg_gui::widget::{active_modal_path, collect_inspector_nodes};
+    use agg_gui::App;
+
+    struct NoopPlatform;
+    impl KeyInSightPlatform for NoopPlatform {}
+
+    const WINDOW: Size = Size {
+        width: 1180.0,
+        height: 640.0,
+    };
+
+    /// Lay out a few frames: layout ticks the engine and re-syncs the
+    /// side panel's visibility cells, exactly as the shell's frame loop
+    /// does.
+    fn frames(app: &mut App) {
+        for _ in 0..3 {
+            app.layout(WINDOW);
+        }
+    }
+
+    fn sheet_is_up(app: &App) -> bool {
+        active_modal_path(app.root()).is_some()
+    }
+
+    /// Is a button with this label laid out anywhere in the app?
+    fn has_button(app: &App, label: &str) -> bool {
+        let mut nodes = Vec::new();
+        collect_inspector_nodes(app.root(), 0, Point::new(0.0, 0.0), &mut nodes);
+        nodes.iter().any(|node| {
+            node.properties
+                .iter()
+                .any(|(key, value)| *key == "label" && value == label)
+        })
+    }
+
+    fn press(app: &mut App, key: Key) {
+        app.on_key_down(key, Modifiers::default());
+    }
+
+    /// Return while the sheet is MEASURING — its Start button gone and
+    /// Done not yet shown, so the sheet itself has no default action —
+    /// must leave the session alone. Escape (the sheet's Cancel) then
+    /// closes it, and the next Return does reach the side panel again:
+    /// the positive control that proves the default action is wired.
+    #[test]
+    fn enter_while_measuring_does_not_reach_the_panel_default_action() {
+        let (mut app, handles) = build_keyinsight_app(UiFonts::bundled(), NoopPlatform);
+        frames(&mut app);
+        // Park the session on the summary, where "Next Exercise" is the
+        // side panel's default action. Unplugged (self-verify) input is
+        // the one source that can be graded headlessly.
+        handles
+            .engine
+            .borrow_mut()
+            .set_input_source(InputSource::SelfVerify);
+        frames(&mut app);
+        handles.engine.borrow_mut().self_verify_grade(true);
+        frames(&mut app);
+        assert!(
+            matches!(handles.engine.borrow().phase(), Phase::Summary(_)),
+            "the summary is the state whose default action we guard"
+        );
+
+        handles.open_calibration();
+        frames(&mut app);
+        assert!(sheet_is_up(&app), "the Calibration sheet is showing");
+
+        // Return #1 hits the sheet's own default action (Start).
+        press(&mut app, Key::Enter);
+        frames(&mut app);
+        assert!(
+            !has_button(&app, "Start"),
+            "Return started the calibration run"
+        );
+        assert!(
+            !has_button(&app, "Done"),
+            "mid-run the sheet has no default action at all"
+        );
+
+        // Return #2 has nowhere to go inside the sheet — and must not
+        // leak to the side panel behind it.
+        press(&mut app, Key::Enter);
+        frames(&mut app);
+        assert!(
+            matches!(handles.engine.borrow().phase(), Phase::Summary(_)),
+            "Return under the Calibration sheet must not advance the session"
+        );
+        assert!(sheet_is_up(&app), "and the sheet stays open");
+
+        // Escape is the sheet's Cancel: it stops, closes, and resumes
+        // the training loop.
+        press(&mut app, Key::Escape);
+        frames(&mut app);
+        assert!(!sheet_is_up(&app), "Escape cancels the sheet");
+        assert_eq!(*handles.engine.borrow().phase(), Phase::Playing);
+
+        // Positive control: with no sheet showing, Return fires the side
+        // panel's default action again ("Nailed It" while playing).
+        press(&mut app, Key::Enter);
+        frames(&mut app);
+        assert!(
+            matches!(handles.engine.borrow().phase(), Phase::Summary(_)),
+            "the panel default action fires once the sheet is gone"
         );
     }
 }
