@@ -27,14 +27,25 @@ const ICON_GAP: f64 = 5.0;
 const GLYPH_GAP: f64 = 3.0;
 
 /// Text treatment for a row (SwiftUI font modifiers).
+///
+/// SwiftUI distinguishes two things the port must not merge:
+/// `.monospaced()` swaps in a code face, while `.monospacedDigit()` keeps
+/// the body face and only pins the digits to one advance so counters do
+/// not jitter. [`RowStyle::Mono`] is the first; [`RowStyle::TabularDigits`]
+/// and [`RowStyle::BoldTabularDigits`] are the second.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum RowStyle {
     /// `.body` / `.callout` regular text.
     Regular,
     /// `.headline` / `.bold()`.
     Bold,
-    /// `.monospaced()`.
+    /// `.monospaced()` — the code face (Cascadia Code).
     Mono,
+    /// `.monospacedDigit()` — the body face with tabular figures.
+    TabularDigits,
+    /// `.font(.headline).monospacedDigit()` — headline weight, tabular
+    /// figures (the tempo count-in row).
+    BoldTabularDigits,
 }
 
 /// One status line: optional icon, text, color, style, font size.
@@ -209,6 +220,8 @@ impl Widget for InfoRows {
                 RowStyle::Regular => &self.fonts.regular,
                 RowStyle::Bold => &self.fonts.bold,
                 RowStyle::Mono => &self.fonts.mono,
+                RowStyle::TabularDigits => &self.fonts.tabular,
+                RowStyle::BoldTabularDigits => &self.fonts.bold_tabular,
             };
             ctx.set_font(Arc::clone(font));
             ctx.set_font_size(row.size);

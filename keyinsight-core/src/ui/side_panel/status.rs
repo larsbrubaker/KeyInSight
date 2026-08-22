@@ -51,7 +51,7 @@ pub(super) fn status_rows(engine: &SessionEngine) -> Vec<InfoRow> {
                 format!("{} notes played", engine.free_play_count()),
                 size::BODY,
             )
-            .with_style(RowStyle::Mono)];
+            .with_style(RowStyle::TabularDigits)];
             if let Some(last) = engine.last_free_play_note() {
                 rows.push(
                     InfoRow::text(format!("Last note: {last}"), size::BODY)
@@ -89,13 +89,13 @@ fn survival_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     let mut rows = vec![
         InfoRow::glyph_run(hearts, size::BODY),
         InfoRow::text(format!("{} notes", engine.survival_notes()), size::BODY)
-            .with_style(RowStyle::Mono),
+            .with_style(RowStyle::TabularDigits),
     ];
     if engine.streak() >= 5 {
         rows.push(
             InfoRow::text(format!("{} streak", engine.streak()), size::BODY)
                 .with_icon(icon::FLAME)
-                .with_style(RowStyle::Mono)
+                .with_style(RowStyle::TabularDigits)
                 .with_color(palette::ORANGE),
         );
     }
@@ -107,7 +107,7 @@ fn survival_rows(engine: &SessionEngine) -> Vec<InfoRow> {
 fn drill_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     let streak = InfoRow::text(format!("{} streak", engine.streak()), size::BODY)
         .with_icon(icon::FLAME)
-        .with_style(RowStyle::Mono);
+        .with_style(RowStyle::TabularDigits);
     let streak = if engine.streak() >= 5 {
         streak.with_color(palette::ORANGE)
     } else {
@@ -115,7 +115,7 @@ fn drill_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     };
     let mut rows = vec![
         InfoRow::text(format!("Card {}", engine.drill_cards_done() + 1), size::BODY)
-            .with_style(RowStyle::Mono),
+            .with_style(RowStyle::TabularDigits),
         streak,
     ];
     if engine.drill_hint_keys() {
@@ -136,7 +136,7 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
                 format!("Pass {}", engine.self_verify_attempts() + 1),
                 size::BODY,
             )
-            .with_style(RowStyle::Mono),
+            .with_style(RowStyle::TabularDigits),
         );
     } else {
         rows.push(
@@ -148,13 +148,13 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
                 ),
                 size::BODY,
             )
-            .with_style(RowStyle::Mono),
+            .with_style(RowStyle::TabularDigits),
         );
     }
     if engine.errors_this_exercise() > 0 {
         rows.push(
             InfoRow::text(format!("{} wrong", engine.errors_this_exercise()), size::BODY)
-                .with_style(RowStyle::Mono)
+                .with_style(RowStyle::TabularDigits)
                 .with_color(palette::RED),
         );
     }
@@ -162,7 +162,7 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
         rows.push(
             InfoRow::text(format!("{} first-try streak", engine.streak()), size::BODY)
                 .with_icon(icon::FLAME)
-                .with_style(RowStyle::Mono)
+                .with_style(RowStyle::TabularDigits)
                 .with_color(palette::ORANGE),
         );
     }
@@ -198,7 +198,7 @@ fn playing_rows(engine: &SessionEngine) -> Vec<InfoRow> {
         if let Some(count_in) = engine.count_in_remaining() {
             rows.push(
                 InfoRow::text(format!("Ready… {count_in}"), size::BODY)
-                    .with_style(RowStyle::Bold)
+                    .with_style(RowStyle::BoldTabularDigits)
                     .with_color(palette::BLUE),
             );
             rows.push(InfoRow::text(bpm, size::CALLOUT).with_style(RowStyle::Mono).with_dim());
@@ -244,6 +244,35 @@ mod tests {
         assert_eq!(rows[1].icon, Some(icon::FLAME));
         assert!(rows[1].dim && rows[1].color.is_none(), "secondary below 5");
         assert_eq!(rows.len(), 2, "no lit-key hint without a miss");
+    }
+
+    /// SwiftUI marks these rows `.monospacedDigit()`, not `.monospaced()`:
+    /// they must render in the body face with tabular figures. Only the
+    /// genuinely `.monospaced()` rows ("Last note: …", the BPM readout)
+    /// stay on the code face.
+    #[test]
+    fn monospaced_digit_rows_keep_the_body_face() {
+        let mut engine = test_engine();
+        engine.set_input_source(InputSource::Keyboard);
+        let rows = status_rows(&engine);
+        assert_eq!(rows[0].style, RowStyle::TabularDigits, "Note X of Y");
+
+        engine.enter_survival();
+        let rows = status_rows(&engine);
+        assert_eq!(rows[1].style, RowStyle::TabularDigits, "N notes");
+
+        let mut engine = test_engine();
+        engine.set_input_source(InputSource::Keyboard);
+        engine.start_drill();
+        let rows = status_rows(&engine);
+        assert_eq!(rows[0].style, RowStyle::TabularDigits, "Card N");
+        assert_eq!(rows[1].style, RowStyle::TabularDigits, "N streak");
+
+        let mut engine = test_engine();
+        engine.enter_free_play();
+        engine.set_input_source(InputSource::Keyboard);
+        let rows = status_rows(&engine);
+        assert_eq!(rows[0].style, RowStyle::TabularDigits, "N notes played");
     }
 
     #[test]

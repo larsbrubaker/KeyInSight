@@ -17,15 +17,21 @@ pub const MONO_FONT_BYTES: &[u8] = include_bytes!("../../assets/CascadiaCode.ttf
 /// Font Awesome Free solid (OFL font license).
 pub const ICON_FONT_BYTES: &[u8] = include_bytes!("../../assets/fa.ttf");
 
-/// The four faces every widget builder receives.
+/// The faces every widget builder receives.
 #[derive(Clone)]
 pub struct UiFonts {
     /// Body text (SwiftUI `.body`/`.callout`/`.caption`).
     pub regular: Arc<Font>,
     /// Titles and headlines (SwiftUI `.bold()`/`.headline`).
     pub bold: Arc<Font>,
-    /// Monospaced digits and note names (SwiftUI `.monospaced()`).
+    /// Note names and code-like runs (SwiftUI `.monospaced()`).
     pub mono: Arc<Font>,
+    /// Body text with tabular figures (SwiftUI `.monospacedDigit()`):
+    /// Inter with `tnum`, so counters do not jitter as digits change.
+    pub tabular: Arc<Font>,
+    /// Headline weight with tabular figures
+    /// (`.font(.headline).monospacedDigit()` — the count-in row).
+    pub bold_tabular: Arc<Font>,
     /// Icon glyphs (SF Symbols → Font Awesome).
     pub icons: Arc<Font>,
 }
@@ -37,6 +43,16 @@ impl UiFonts {
             regular: Arc::new(Font::from_slice(UI_FONT_BYTES).expect("Inter Regular parses")),
             bold: Arc::new(Font::from_slice(UI_BOLD_FONT_BYTES).expect("Inter Bold parses")),
             mono: Arc::new(Font::from_slice(MONO_FONT_BYTES).expect("Cascadia Code parses")),
+            tabular: Arc::new(
+                Font::from_slice(UI_FONT_BYTES)
+                    .expect("Inter Regular parses")
+                    .with_tabular_digits(true),
+            ),
+            bold_tabular: Arc::new(
+                Font::from_slice(UI_BOLD_FONT_BYTES)
+                    .expect("Inter Bold parses")
+                    .with_tabular_digits(true),
+            ),
             icons: Arc::new(Font::from_slice(ICON_FONT_BYTES).expect("Font Awesome parses")),
         }
     }
@@ -171,6 +187,69 @@ mod tests {
                 glyph as u32
             );
         }
+    }
+
+    /// `.monospacedDigit()` must be the *proportional* face with tabular
+    /// figures, not the monospaced one: Inter's digits differ in width
+    /// until `tnum` is applied, and then they all share one advance.
+    #[test]
+    fn tabular_faces_put_the_digits_on_one_advance() {
+        use agg_gui::text::shape_glyphs;
+
+        let fonts = UiFonts::bundled();
+        for (name, proportional, tabular) in [
+            ("regular", &fonts.regular, &fonts.tabular),
+            ("bold", &fonts.bold, &fonts.bold_tabular),
+        ] {
+            let plain: Vec<f64> = shape_glyphs(proportional, "0123456789", size::BODY)
+                .iter()
+                .map(|g| g.x_advance)
+                .collect();
+            let tnum: Vec<f64> = shape_glyphs(tabular, "0123456789", size::BODY)
+                .iter()
+                .map(|g| g.x_advance)
+                .collect();
+            assert!(
+                plain.windows(2).any(|w| (w[0] - w[1]).abs() > 0.01),
+                "Inter {name} is expected to be proportional by default"
+            );
+            assert!(
+                tnum.windows(2).all(|w| (w[0] - w[1]).abs() < 1e-6),
+                "Inter {name} + tnum must put every digit on one advance, got {tnum:?}"
+            );
+            // Same face, different figures: shaping must not be served
+            // from the proportional cache entry.
+            let plain_again: Vec<f64> = shape_glyphs(proportional, "0123456789", size::BODY)
+                .iter()
+                .map(|g| g.x_advance)
+                .collect();
+            assert_eq!(plain, plain_again, "{name} proportional shaping is stable");
+            assert_ne!(plain, tnum, "{name} tabular shaping is its own entry");
+        }
+    }
+
+    /// Tabular digits must not turn the text into a code font: the
+    /// letters keep Inter's proportional widths (SwiftUI
+    /// `.monospacedDigit()` vs `.monospaced()`).
+    #[test]
+    fn tabular_face_keeps_proportional_letters() {
+        use agg_gui::text::measure_advance;
+
+        let fonts = UiFonts::bundled();
+        let text = "Note of";
+        let regular = measure_advance(&fonts.regular, text, size::BODY);
+        let tabular = measure_advance(&fonts.tabular, text, size::BODY);
+        let mono = measure_advance(&fonts.mono, text, size::BODY);
+        // Within a fraction of a pixel: the same outlines, shaped with
+        // one extra feature in the plan.
+        assert!(
+            (regular - tabular).abs() < 0.5,
+            "letters must keep their proportional widths ({regular} vs {tabular})"
+        );
+        assert!(
+            (mono - tabular).abs() > 1.0,
+            "the monospaced face must stay a different width ({mono} vs {tabular})"
+        );
     }
 
     /// The UI faces must carry the typographic specials the labels use.
