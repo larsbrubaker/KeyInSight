@@ -1,184 +1,128 @@
-# KeyInSight Port — Status & TODO
+# KeyInSight — working status & TODO
 
-*Updated 2026-08-21. This file is the hand-off point for resuming work on
-another machine.*
+*Working doc, not a history: remaining work + how to resume. Prune as items
+land; delete this file when it's empty.*
 
-## 2026-08-21 — synced with upstream Swift 23066db → 9fc4f78
+## Resume here
 
-All 24 upstream commits are ported, in dependency order, one green commit
-per step (311 tests, clippy clean, native + wasm build): hand modes with a
-per-staff skill model and bass unlock order, interval/chord-shape ladders
-with readiness probes and transition backoff, cross-staff unison avoidance,
-`InputStormDetector` mastery guard + 15 s latency outlier, synchronous
-chords (0.08 s window, `Restarted`), practice-from-here, the endless
-streak-centered micro-drill, free-play take recording/replay, survival mode
-(three-line sliding feed, three lives, `SurvivalPolicy` score), About +
-Profile sheets, Library search/filter/sort with two-hand grouping, two-staff
-Progress with trouble transitions and chords, 43 new bundled pieces (61).
-verovio-rust gained encoded system breaks, Verovio spacing + `JustifyX`
-justification, per-system layout info and single-bass-staff import for the
-feed. The Swift `DemoDriver` survival and practice-from-here acts are
-ported as engine integration tests (`engine/session/tests/{survival,demo}.rs`).
+Three repos, all pushed and green at this hand-off:
 
-**Pending on the human side:** push verovio-rust `main` (commits 9ad565e,
-39a750a, 9a55b79 on top of 8cb5e0f; local main is behind origin by one, so
-`git pull --rebase` first) — KeyInSight's submodule pin and CI depend on it.
-Delegation pattern now lives in `CLAUDE.md` → "Orchestration pattern" with
-`.claude/agents/{implementer,reviewer,fix-test-failures}.md`.
-
-## Where things stand
-
-**Phase 1 (the true port of the Swift app) is complete for the core
-training loop and shipped.** Every module of the Swift reference
-(`keyinsight-swift-reference/`, pinned submodule) is ported to Rust with
-its test suite: 311 tests green across the workspace, clippy clean
-(`-D warnings`), CI and GitHub Pages deploys passing.
-
-Live app: <https://larsbrubaker.github.io/KeyInSight/>
-(training loop works in the browser: press A S D F G H J K = C4–C5,
-W E T Y U = sharps, Z/X octave shift; progress persists in localStorage).
-
-Native app: `cargo run -p keyinsight-native` — Windows and macOS (persists to
-`%APPDATA%/KeyInSight/keyinsight.json` / `~/Library/Application Support/KeyInSight/keyinsight.json`).
-
-## Repository layout (three repos, all pushed)
-
-| Repo | License | Role |
+| Repo | main | Notes |
 |---|---|---|
-| [KeyInSight](https://github.com/larsbrubaker/KeyInSight) | MIT | The app. Submodule of rust-apps. Contains `keyinsight-swift-reference/` (pinned Swift source). |
-| [verovio-rust](https://github.com/larsbrubaker/verovio-rust) | **LGPL-3.0** | Music engraving port (Verovio → Rust, renders via agg-gui). Separate repo purely for license isolation — never inline its code into the app. Contains `verovio-cpp-reference/` pinned at `8d42439` (6.2.1, same revision the Swift app pinned). Submodule of KeyInSight (`verovio-rust/`) and of rust-apps. |
-| [agg-gui](https://github.com/larsbrubaker/agg-gui) | MIT | UI framework. Path-patched sibling (`[patch.crates-io]`). |
+| KeyInSight | this commit | 367 tests, clippy `-D warnings`, native + wasm build; submodule `verovio-rust/` pinned to `d85ccff` |
+| verovio-rust | `d85ccff` | engraving parity work in flight (see below); `verovio-cpp-reference/` must be initialized to read the C++ (`git submodule update --init --depth 1`) |
+| agg-gui (sibling `../agg-gui`, path-patched) | `8ffc74a` (0.4.1) | SegmentedControl, Spinner, default/cancel actions, `NativeShellConfig::new().with_min_size`, scrollbar helpers public. **No branches** — commit on main |
 
-agg-gui must be a sibling at `../agg-gui` (the rust-apps superproject
-provides this; CI clones it the same way). verovio-rust is a submodule of
-this repo at `verovio-rust/` (`git submodule update --init verovio-rust`).
-
-## Setup on a fresh machine
-
-```powershell
+Fresh machine:
+```bash
 git clone --recurse-submodules https://github.com/larsbrubaker/rust-apps.git
-cd rust-apps/KeyInSight
-cargo test --workspace              # everything should be green
-cargo run -p keyinsight-native      # desktop app
+cd rust-apps/KeyInSight && cargo test --workspace && cargo run -p keyinsight-native
 ```
+Rules: `CLAUDE.md` (orchestration pattern: plan in the main session, delegate to
+`.claude/agents/{implementer,reviewer,fix-test-failures}.md`), `docs/*.md`.
+Engraving parity is measured by `tools/reference-harness/` (Verovio 6.2 goldens;
+`node render_goldens.mjs && node extract_metrics.mjs --check`) and gated by
+`verovio-rust/tests/golden_metrics_tests.rs` (set `VEROVIO_GOLDENS_REQUIRED=1` to
+fail instead of skip when goldens are absent).
 
-Rules live in `CLAUDE.md` + `docs/` (porting rules, platform
-substitutions, architecture, build/deploy). verovio-rust has its own
-`CLAUDE.md` + `docs/`.
+## TODO — engraving parity (verovio-rust, numeric, Windows-doable)
 
-## What is ported (all with the Swift test suites)
+Scoreboard at `d85ccff` (golden units; 180 = 1 staff space): system structure
+exact 111/111; staff tops ≤ 2; note y exact; note x / barline x ≤ 45 outside
+`KNOWN_DEVIATIONS` (moonlight-opening chords, gen-s4 stems — see the test).
 
-- **Core**: `NoteEvent` seam, `PitchSpelling`, bit-exact `SplitMix64`.
-- **Score**: model (chords/ties/two voices), `DifficultyDescriptors`,
-  adaptive `ExerciseGenerator`, `FreePlayScore`, MusicXML encoder +
-  importer (round-trips), all 18 bundled pieces verified note-for-note.
-- **Engine**: `SelfPacedMatcher`, `TempoMatcher` + tempo/rhythm policies,
-  `OctaveAnchor`, and the full `SessionEngine`
-  (`src/engine/session/{mod,lifecycle,input,modes,progress}.rs`):
-  adaptive exercises, drills, free play, repertoire, unplugged
-  self-grading, tempo runs with count-in + miss sweep, auto-advance,
-  per-user sessions, event logging. Swift timers/dispatch map to the
-  deadline queue processed in `SessionEngine::tick()` (called every
-  painted frame by the shells).
-- **Skill**: EWMA mastery, unlock ladder, interval items, key unlocks.
-- **Persistence**: full `AppDatabase` semantics (users, sessions,
-  exercises, note-event log, item stats, settings, piece plays — all
-  per-user) as one serde document behind the `Storage` trait
-  (native = file, wasm = localStorage, tests = memory).
-- **Audio**: YIN pitch detector + `NoteGate` (pure DSP, ready for the mic
-  backend), SMF encoder, metronome clock over the `AudioOut` trait, and
-  real output on both shells (2026-07-07): synthesized clicks + OxiSynth
-  SF2 piano rendering in `audio::synth`, played through cpal
-  (`keyinsight-native/src/audio.rs`) and WebAudio
-  (`keyinsight-wasm/src/audio.rs`); `NullAudioOut` remains for tests.
-- **Input**: simulated keyboard backend (focus-routed through the
-  `TrainingRoot` widget), unplugged backend.
-- **Notation**: `NotationRenderer` (wraps verovio-rust), feedback
-  `NotationController` (state colors, ghost note, timing ticks,
-  playback-follow schedule), `NotationWidget` (paints the score, always
-  light page, hover-to-name vocabulary).
-- **UI**: training root + side panel + bottom bar + piano strip +
-  Library/Progress/Calibration sheets + add/rename player dialogs, light
-  theme forced app-wide. Visual parity pass done (2026-07-07): Inter
-  regular/bold + Cascadia mono + Font Awesome faces (`ui/fonts.rs`),
-  macOS system palette (`ui/palette.rs`), dividers/fixed geometry
-  matching the SwiftUI views, colored status rows with icons + painted
-  beat dots (`InfoRows`), mic `LevelMeter`, boxed instructions,
-  segmented pickers with disabled states, toggle switches, ComboBox
-  player picker, centered modal sheets over a scrim (`agg-gui
-  ModalSheet`), heat-map staff + stat tables in Progress, MusicXML
-  import via `rfd` on native (`KeyInSightPlatform::open_musicxml`).
+1. **Step 8 — chords**: `Note::CalcNoteHeadShift` (seconds flip across the stem),
+   `AdjustAccidXFunctor` column stacking, chord dot collision pass
+   (`calcdotsfunctor.cpp`). Goldens: moonlight-opening, gymnopedie-1.
+2. **Step 9 — ties**: direction follows the stem, notehead-edge endpoints with
+   Verovio insets, `tieMidpointThickness`, ties as positioners in the vertical
+   overflow (`vertical.rs`). Goldens: tie x2/y2 + apex.
+3. Shrink `KNOWN_DEVIATIONS` to empty; tighten gates; update `docs/porting.md`
+   tolerances (it must match the test constants).
+4. Review `dd0c7e4` (stems) + `d85ccff` (follow-ups) — committed unreviewed when
+   the session stopped (tests green).
+5. KeyInSight data fix: add proper `<accidental>` elements (measure-carry rules)
+   to pieces with out-of-key alters and no accidentals (fur-elise ×2,
+   minuet-in-g-full, eine-kleine-nachtmusik, moonlight-opening,
+   sheep-may-safely-graze); Swift shows these without sharps (upstream data bug);
+   regenerate those goldens; check the generator encoder emits measure-aware
+   accidentals; test that every bundled piece's out-of-key alters carry one.
+6. Optional: light-heavy final barline needs `<barline>` in the data (Verovio
+   6.2.1 does not add one) — parity with Swift is *plain*, so leave unless wanted.
+7. KeyInSight timemap: the harness shows Verovio turning tie-stop notes *on* at
+   their own onset; `Toolkit::build_timemap` folds continuations — decide.
+8. `notation/controller.rs:427` comment about em-square glyph boxes is stale;
+   ghost-note radius/tick placement could use the real notehead box now.
 
-## TODO — Phase 2 (rough priority order)
+## TODO — UI parity (agg-gui UI; see the Swift UI sources)
 
-1. **Native MIDI input** (`midir`): implement `InputBackend` in
-   `keyinsight-native`, feed the engine's `event_queue`, wire the
-   `BackendFactory` (see `default_backend_factory` — it currently
-   substitutes the simulated backend for MIDI/mic).
-2. ~~**Native audio out**~~ — done (2026-07-07): `keyinsight-native/src/audio.rs`
-   (cpal mixer on the host clock). Clicks are the Swift sine bursts;
-   Hear It renders the SMF through OxiSynth + the bundled CC0
-   Upright Piano KW small SF2 (`keyinsight-core/src/audio/synth.rs`),
-   with an additive-synthesis fallback. `keyinsight-native --audio-smoke`
-   plays an arpeggio + clicks headlessly.
-3. **Web MIDI** in `keyinsight-wasm` (WebAudio out is done —
-   `keyinsight-wasm/src/audio.rs`; MIDI permission requests belong in the
-   shim/`main.ts`, never visible UI). Note: the SF2 is embedded, putting
-   the wasm at ~18 MB — consider lazy-fetching it if load time matters.
-4. ~~**Mic backend**~~ — done (2026-07-07), Goertzel-bank design (not
-   YIN): `audio/goertzel.rs` evaluates each candidate note's harmonics
-   with spectral contrast against off-frequency probes (noise-robust,
-   chord-capable), `input/mic.rs` turns detections into NoteEvents
-   (unexplained attacks surface as low-confidence "heard something"),
-   capture via cpal (`keyinsight-native`) and getUserMedia
-   (`keyinsight-wasm/src/mic.rs`). Level meter is live.
-   `keyinsight-native --mic-smoke` plays a C-major chord through the
-   speakers and detects all three notes on the default mic (verified).
-   YIN + NoteGate remain ported/tested if monophonic free-play pitch
-   tracking ever wants them.
-5. ~~**CalibrationSheet**~~ — done (2026-07-07): `ui/sheets/calibration.rs`,
-   tap-along flow with warm-ups, median input-latency compensation,
-   piano keys pass through the modal (`ModalSheet::with_key_passthrough`).
-6. **DemoDriver** (`Engine/DemoDriver.swift`): the scripted `--demo`
-   playthrough. Partly covered (2026-08-21) — Acts 3.5 and 8 run as
-   engine integration tests; the remaining acts and the headless shell
-   driver are still to port.
-7. ~~**Text-input overlays**~~ — done (2026-07-07):
-   `ui/sheets/player_dialogs.rs`, add/rename dialogs with auto-focused
-   TextField (modal subtree focus routing landed in agg-gui).
-8. **Engraving polish in verovio-rust**: ledger-line coverage check,
-   accidental spacing, beam slants, glyph metrics
-   from `bravura_metadata.json`-style font metadata instead of the fixed
-   width table. Multi-system line breaking is done (2026-07-07):
-   `LayoutOptions::system_width` wraps measures into rows, and the
-   notation widget picks the wrap width that maximizes the fitted scale
-   (`NotationRenderer::fit_view`). Verovio's power-law spacing and
-   horizontal justification (`JustifyX`) landed 2026-08-21.
-9. **Notation widget scroll** for long pieces (Swift used a scrollable
-   page + auto-follow; the widget currently scales down).
-10. ~~**Progress sheet heat staff**~~ — done (2026-07-07): the Progress
-    sheet renders the heat-map staff through a dedicated
-    `NotationController` plus the full stat sections and legend.
-11. **PWA polish for the demo site** (icons/manifest like the other apps).
+Done: accent `#007AFF`, segmented pickers, tooltips (all but two), full-width
+buttons where Swift has `.frame(maxWidth:.infinity)`, default/cancel actions,
+spinner, Profile toggle order, level-meter palette, bottom-bar surface.
+
+1. **Return leaks past the Calibration sheet** (review finding): the sheet is
+   `with_key_passthrough(true)`; while Start/Done are hidden, Enter reaches the
+   side-panel default (Next Exercise / Replay / Run It Back) behind the modal.
+   Fix in agg-gui (`on_key_down` must not run `dispatch_root_action` while a
+   modal is active) or give the calibration sheet a swallowing
+   `with_default_action`.
+2. **InfoRows wrapping** (`ui/info_rows.rs`): wrap long status/summary rows with a
+   hanging indent (they clip at 272 px today), per-branch row gap (5 generic /
+   6 survival+drill), `ICON_SCALE` 0.85 → 1.0, count-in "Ready… N" + BPM on one
+   row, beat-dots→BPM gap 8; then wire the two remaining tooltips
+   (`help::FOLLOWING_OCTAVE`, `help::STATS_SUPPRESSED`) — needs per-row hover
+   targets or an agg-gui hook to submit a tooltip from a custom widget.
+   (A partial split of info_rows.rs into a directory was discarded at stop.)
+3. **Notation page styling** (`NotationController.swift` CSS): page padding
+   16 v / 24 h; ghost note as a −20° oval, 2.5 px `#8a8a8a` stroke,
+   `rgba(138,138,138,0.25)` fill; ghost ledger lines (2 px `#9a9a9a`,
+   width headWidth×1.8, every space beyond the staff); ticks as bold 15 px
+   ◂/▸ `#b8860b` 24 px above the notehead, 6 px left; verify HIT_PAD 10 and the
+   8 inspect kinds.
+4. Sheet chrome (needs agg-gui): ModalSheet min/ideal/max sizing + present/dismiss
+   animation (Progress 780–1100×640–900, Library 640–900×440–800, About
+   560–760×480–820); List/row chrome (separators, section headers) for Progress
+   and Library; sheet padding ~16; center Calibration buttons; About italics via
+   rich_text; `.thinMaterial` callout + `.bar` material + opacity fade; intrinsic
+   width ComboBox; Semibold face for `.headline`; icon cleanup (distinct
+   `CHECK_SEAL`, real piano-keys and metronome glyphs; bottom-bar glyph 14→13).
+5. Add `keyinsight-native --screenshot <path> [--library|--survival|--progress|
+   --about|--profile|--calibration]` (agg-gui `ScreenshotHandle` + demo-wgpu
+   readback) for deterministic captures; `.claude/launch.json` for `demo/`
+   (`bun install`, `bun run wasm`, `bun run dev`).
+
+## TODO — visual matching (needs the Mac)
+
+1. Build/run the pinned Swift app (`keyinsight-swift-reference`, `swift run`);
+   capture reference screenshots of every view/state (training per hand mode,
+   tempo, drill, survival mid-run + summary, free play, repertoire + chip,
+   Library filters, Progress, About, Profile, Calibration, dialogs) — the
+   Swift `--demo` run walks most states. No Swift screenshots exist anywhere yet.
+2. Commit them as a `reference/` corpus; diff against Rust captures (item 5 above
+   or the wasm demo in a browser at a fixed viewport).
+3. Capture one end-to-end pinned exercise per seed from the macOS build as a
+   cross-platform determinism test (SplitMix64 draws are now bit-exact).
+
+## TODO — features (small)
+
+- PWA polish for `demo/`: manifest + icons + favicon + head tags (Antidote/demo
+  is the pattern) and a `sw.js` with a `__BUILD_ID__` cache (18 MB wasm).
+- Web MusicXML import in `WasmPlatform` (hidden `<input type=file>` inside the
+  user gesture) — record in `docs/platform-substitutions.md`.
+- `split_mix64.rs` `next_f64_below`: `debug_assert!(total > 0.0)`.
+- Web MIDI + wake lock were compiled but not exercised in a browser; midir hot-plug
+  untested against hardware (`keyinsight-native --midi-smoke`).
+- Minor review nits: `notation/widget/scroll.rs` re-derives ScrollView's track
+  geometry (expose `ScrollbarGeometry::vertical_for` in agg-gui); override held
+  by system index can drift across a re-wrap; `offset_x` negative on very narrow
+  widgets; `verovio-rust` tie tests skip silently without the KeyInSight sibling;
+  agg-gui main has 3 pre-existing `multi_touch_routing` test failures and a
+  clippy backlog.
 
 ## Known rough edges
 
-- KeyInSight CI builds against the pushed sibling agg-gui clone; local
-  work that adds agg-gui features must push agg-gui before KeyInSight.
-- `Toolkit::layout()`/`render()` panic if called before `load_music_xml`
-  (mirrors the C++ toolkit contract; the app never does).
-- The session RNG seeds from wall time at launch (Swift used
-  `SystemRandomNumberGenerator`); pass a fixed seed to
-  `SessionEngine::new` for reproducible runs.
-- rust-apps superproject: only the KeyInSight/verovio-rust pointers
-  were committed by this work; other submodules have unrelated local
-  changes from earlier sessions.
-
-## Conventions to keep (short version — CLAUDE.md is authoritative)
-
-- Port the Swift tests with every module; never weaken a test.
-- 800-line file cap (enforced by `keyinsight-core/tests/file_line_count.rs`).
-- `keyinsight-core` stays wasm-clean; platform APIs behind traits.
-- All UI through agg-gui; notation only through verovio-rust (LGPL wall).
-- Music always renders light; the app runs agg-gui's light visuals.
-- One green module per commit.
+- KeyInSight CI builds against the pushed sibling agg-gui and the verovio-rust
+  submodule pin — push those first.
+- `Toolkit::layout()`/`render()` panic if called before `load_music_xml`.
+- The session RNG seeds from wall time at launch; pass a fixed seed to
+  `SessionEngine::new` for reproducible runs (`--demo` uses 42).
