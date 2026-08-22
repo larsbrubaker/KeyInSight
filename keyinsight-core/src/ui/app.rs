@@ -473,4 +473,29 @@ mod tests {
         handles.open_calibration();
         assert!(handles.show_calibration.get());
     }
+
+    /// The `--piece <slug>` launch hook must survive the first painted
+    /// frame: main.rs calls `start_piece` on the returned handles right
+    /// after `build_keyinsight_app`, then the shell ticks/lays out.
+    #[test]
+    fn piece_launch_hook_survives_first_frames() {
+        let (mut app, handles) = build_keyinsight_app(UiFonts::bundled(), NoopPlatform);
+        let piece = crate::score::RepertoireLibrary::bundled()
+            .into_iter()
+            .find(|p| p.slug == "minuet-in-g")
+            .expect("bundled minuet-in-g");
+        handles.engine.borrow_mut().start_piece(piece);
+        for _ in 0..3 {
+            app.layout(agg_gui::geometry::Size::new(1180.0, 620.0));
+            handles.tick();
+        }
+        assert_eq!(
+            handles
+                .engine
+                .borrow()
+                .active_piece()
+                .map(|p| p.title.clone()),
+            Some("Minuet in G".to_string())
+        );
+    }
 }
