@@ -145,11 +145,14 @@ pub fn build_calibration_sheet(
         column = column.add(Box::new(
             Conditional::new(
                 idle,
-                Box::new(Button::new("Start", Arc::clone(&fonts.regular)).on_click(
-                    move || {
-                        start(&start_engine, &start_state, &start_clock);
-                    },
-                )),
+                // `.keyboardShortcut(.defaultAction)`: Return starts.
+                Box::new(
+                    Button::new("Start", Arc::clone(&fonts.regular))
+                        .with_default_action()
+                        .on_click(move || {
+                            start(&start_engine, &start_state, &start_clock);
+                        }),
+                ),
             )
             .with_h_anchor(HAnchor::CENTER),
         ));
@@ -164,15 +167,18 @@ pub fn build_calibration_sheet(
         column = column.add(Box::new(
             Conditional::new(
                 finished,
-                Box::new(Button::new("Done", Arc::clone(&fonts.regular)).on_click(
-                    move || {
-                        done_visible.set(false);
-                        // Restart the training loop with the new
-                        // compensation applied (the Swift onDisappear).
-                        done_engine.borrow_mut().next_exercise();
-                        agg_gui::animation::request_draw();
-                    },
-                )),
+                // `.keyboardShortcut(.defaultAction)`: Return dismisses.
+                Box::new(
+                    Button::new("Done", Arc::clone(&fonts.regular))
+                        .with_default_action()
+                        .on_click(move || {
+                            done_visible.set(false);
+                            // Restart the training loop with the new
+                            // compensation applied (the Swift onDisappear).
+                            done_engine.borrow_mut().next_exercise();
+                            agg_gui::animation::request_draw();
+                        }),
+                ),
             )
             .with_h_anchor(HAnchor::CENTER),
         ));
@@ -188,10 +194,13 @@ pub fn build_calibration_sheet(
         column = column.add(Box::new(
             Conditional::new(
                 unfinished,
+                // `.keyboardShortcut(.cancelAction)`: Esc cancels (the
+                // sheet's own Esc close covers the finished state).
                 Box::new(
                     Button::new("Cancel", Arc::clone(&fonts.regular))
                         .with_subtle()
                         .with_active_fn(|| false)
+                        .with_cancel_action()
                         .on_click(move || {
                             stop(&cancel_engine, &cancel_state);
                             cancel_visible.set(false);

@@ -140,9 +140,11 @@ fn build_content(
         }
         let close = Rc::clone(visible);
         header = header.add(Box::new(
+            // `.keyboardShortcut(.cancelAction)`: Esc closes.
             Button::new("Done", Arc::clone(&fonts.regular))
                 .with_subtle()
                 .with_active_fn(|| false)
+                .with_cancel_action()
                 .on_click(move || {
                     close.set(false);
                     agg_gui::animation::request_draw();

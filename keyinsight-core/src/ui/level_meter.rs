@@ -62,13 +62,13 @@ impl Widget for LevelMeter {
         ctx.rounded_rect(0.0, 0.0, width, HEIGHT, radius);
         ctx.fill();
 
-        // Fill: green, red past the clip threshold; never thinner than
-        // the Swift `max(3, …)`.
+        // Fill: `Color.green`, `Color.red` past the clip threshold; never
+        // thinner than the Swift `max(3, …)`.
         let fill_w = (width * level).max(3.0);
         let fill = if level > 0.85 {
-            Color::from_rgb8(0xD7, 0x30, 0x27)
+            crate::ui::palette::RED
         } else {
-            Color::from_rgb8(0x2E, 0x9E, 0x44)
+            crate::ui::palette::GREEN
         };
         ctx.set_fill_color(fill);
         ctx.begin_path();

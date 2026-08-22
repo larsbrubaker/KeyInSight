@@ -4,24 +4,48 @@
 //! `summary.rs`.
 
 use std::rc::Rc;
+use std::sync::Arc;
+
+use agg_gui::widgets::{Conditional, FlexColumn, FlexRow, Label, Spinner};
 
 use crate::engine::{InputSource, PacingMode, Phase, SessionEngine, SurvivalPolicy};
 use crate::ui::fonts::{icon, size, UiFonts};
 use crate::ui::palette;
 use crate::ui::{InfoRow, InfoRows, RowStyle};
 
+use super::cells::loading_cell;
 use super::summary::summary_rows;
 use super::Engine;
 
-pub(super) fn status_section(engine: &Engine, fonts: &UiFonts) -> InfoRows {
-    let engine = Rc::clone(engine);
-    InfoRows::new(fonts, move || status_rows(&engine.borrow()))
+/// The status block: the `.loading` row — `HStack { ProgressView()
+/// .controlSize(.small); Text("Preparing…").secondary }` — above the
+/// per-phase [`InfoRows`] (which are empty while loading).
+pub(super) fn status_section(engine: &Engine, fonts: &UiFonts) -> FlexColumn {
+    let loading = FlexRow::new()
+        .with_gap(8.0)
+        .add(Box::new(Spinner::small()))
+        .add(Box::new(
+            Label::new("Preparing…", Arc::clone(&fonts.regular))
+                .with_font_size(size::BODY)
+                .with_dim(true),
+        ));
+    let rows_engine = Rc::clone(engine);
+    FlexColumn::new()
+        .with_gap(0.0)
+        .add(Box::new(Conditional::new(
+            loading_cell(engine),
+            Box::new(loading),
+        )))
+        .add(Box::new(InfoRows::new(fonts, move || {
+            status_rows(&rows_engine.borrow())
+        })))
 }
 
-/// Build the rows for the current engine phase.
+/// Build the rows for the current engine phase (the `.loading` branch is
+/// the spinner row widget in [`status_section`], not a text row).
 pub(super) fn status_rows(engine: &SessionEngine) -> Vec<InfoRow> {
     match engine.phase() {
-        Phase::Loading => vec![InfoRow::text("Preparing…", size::BODY).with_dim()],
+        Phase::Loading => Vec::new(),
         Phase::Playing if engine.is_free_play() => {
             let mut rows = vec![InfoRow::text(
                 format!("{} notes played", engine.free_play_count()),

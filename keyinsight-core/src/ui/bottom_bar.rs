@@ -17,11 +17,12 @@ use agg_gui::geometry::Size;
 use agg_gui::layout_props::Insets;
 use agg_gui::widget::Widget;
 use agg_gui::widgets::{
-    Button, ComboBox, Conditional, Container, FlexRow, Label, Rebuilder,
+    Button, ComboBox, Conditional, Container, FlexRow, Label, Rebuilder, Tooltip,
 };
 
 use crate::engine::SessionEngine;
 use crate::ui::fonts::{icon, size, UiFonts};
+use crate::ui::help;
 use crate::ui::side_panel::{self, open_cell, SidePanelCells};
 
 type Engine = Rc<RefCell<SessionEngine>>;
@@ -55,56 +56,67 @@ pub fn build_bottom_bar(
         let generation = Rc::clone(&cells.dialog_generation);
         let show = Rc::clone(&cells.show_rename_player);
         let enabled = Rc::clone(engine);
-        row = row.add(Box::new(
-            Button::new("", Arc::clone(&fonts.regular))
-                .with_ghost().with_active_fn(|| false)
-                .with_compact()
-                .with_icon(icon::PENCIL, Arc::clone(&fonts.icons))
-                .with_enabled_fn(move || enabled.borrow().current_user().is_some())
-                .on_click(move || {
-                    let current = click
-                        .borrow()
-                        .current_user()
-                        .map(|user| user.name.clone())
-                        .unwrap_or_default();
-                    *name.borrow_mut() = current;
-                    generation.set(generation.get() + 1);
-                    open_cell(&show);
-                    agg_gui::focus::request_focus(crate::ui::sheets::RENAME_NAME_FOCUS);
-                }),
-        ));
+        row = row.add(Box::new(Tooltip::new(
+            Box::new(
+                Button::new("", Arc::clone(&fonts.regular))
+                    .with_ghost().with_active_fn(|| false)
+                    .with_compact()
+                    .with_icon(icon::PENCIL, Arc::clone(&fonts.icons))
+                    .with_enabled_fn(move || enabled.borrow().current_user().is_some())
+                    .on_click(move || {
+                        let current = click
+                            .borrow()
+                            .current_user()
+                            .map(|user| user.name.clone())
+                            .unwrap_or_default();
+                        *name.borrow_mut() = current;
+                        generation.set(generation.get() + 1);
+                        open_cell(&show);
+                        agg_gui::focus::request_focus(crate::ui::sheets::RENAME_NAME_FOCUS);
+                    }),
+            ),
+            help::RENAME_PLAYER,
+            Arc::clone(&fonts.regular),
+        )));
     }
     {
         let name = Rc::clone(&cells.player_name);
         let generation = Rc::clone(&cells.dialog_generation);
         let show = Rc::clone(&cells.show_add_player);
-        row = row.add(Box::new(
-            Button::new("", Arc::clone(&fonts.regular))
-                .with_ghost().with_active_fn(|| false)
-                .with_compact()
-                .with_icon(icon::USER_PLUS, Arc::clone(&fonts.icons))
-                .on_click(move || {
-                    name.borrow_mut().clear();
-                    generation.set(generation.get() + 1);
-                    open_cell(&show);
-                    agg_gui::focus::request_focus(crate::ui::sheets::ADD_NAME_FOCUS);
-                }),
-        ));
+        row = row.add(Box::new(Tooltip::new(
+            Box::new(
+                Button::new("", Arc::clone(&fonts.regular))
+                    .with_ghost().with_active_fn(|| false)
+                    .with_compact()
+                    .with_icon(icon::USER_PLUS, Arc::clone(&fonts.icons))
+                    .on_click(move || {
+                        name.borrow_mut().clear();
+                        generation.set(generation.get() + 1);
+                        open_cell(&show);
+                        agg_gui::focus::request_focus(crate::ui::sheets::ADD_NAME_FOCUS);
+                    }),
+            ),
+            help::ADD_PLAYER,
+            Arc::clone(&fonts.regular),
+        )));
     }
 
-    // Player settings (help "Player settings — octave following, keys
-    // strip"); needs a current player, like Rename.
+    // Player settings; needs a current player, like Rename.
     {
         let enabled = Rc::clone(engine);
         let show = Rc::clone(&cells.show_profile);
-        row = row.add(Box::new(
-            Button::new("", Arc::clone(&fonts.regular))
-                .with_ghost().with_active_fn(|| false)
-                .with_compact()
-                .with_icon(icon::SLIDERS, Arc::clone(&fonts.icons))
-                .with_enabled_fn(move || enabled.borrow().current_user().is_some())
-                .on_click(move || open_cell(&show)),
-        ));
+        row = row.add(Box::new(Tooltip::new(
+            Box::new(
+                Button::new("", Arc::clone(&fonts.regular))
+                    .with_ghost().with_active_fn(|| false)
+                    .with_compact()
+                    .with_icon(icon::SLIDERS, Arc::clone(&fonts.icons))
+                    .with_enabled_fn(move || enabled.borrow().current_user().is_some())
+                    .on_click(move || open_cell(&show)),
+            ),
+            help::PLAYER_SETTINGS,
+            Arc::clone(&fonts.regular),
+        )));
     }
 
     row = row.add_flex(Box::new(crate::ui::hspacer()), 1.0);
@@ -115,15 +127,27 @@ pub fn build_bottom_bar(
         let visible = side_panel::keys_button_cell(engine);
         let active = Rc::clone(engine);
         let click = Rc::clone(engine);
+        let piece = Rc::clone(engine);
         row = row.add(Box::new(Conditional::new(
             visible,
             Box::new(
-                Button::new("Keys", Arc::clone(&fonts.regular))
-                    .with_ghost()
-                    .with_compact()
-                    .with_icon(icon::KEYBOARD, Arc::clone(&fonts.icons))
-                    .with_active_fn(move || active.borrow().show_keys())
-                    .on_click(move || click.borrow_mut().toggle_keys_for_context()),
+                Tooltip::new(
+                    Box::new(
+                        Button::new("Keys", Arc::clone(&fonts.regular))
+                            .with_ghost()
+                            .with_compact()
+                            .with_icon(icon::KEYBOARD, Arc::clone(&fonts.icons))
+                            .with_active_fn(move || active.borrow().show_keys())
+                            .on_click(move || click.borrow_mut().toggle_keys_for_context()),
+                    ),
+                    help::KEYS_TRAINING,
+                    Arc::clone(&fonts.regular),
+                )
+                // The Swift help is a ternary on `engine.activePiece`: the
+                // "disabled" text is just the alternate while a piece is up.
+                .with_disabled_text(help::KEYS_PIECE, move || {
+                    piece.borrow().active_piece().is_some()
+                }),
             ),
         )));
     }
@@ -133,13 +157,17 @@ pub fn build_bottom_bar(
         let click = Rc::clone(engine);
         row = row.add(Box::new(Conditional::new(
             diverted,
-            Box::new(
-                Button::new("Resume Training", Arc::clone(&fonts.regular))
-                    .with_ghost().with_active_fn(|| false)
-                    .with_compact()
-                    .with_icon(icon::UNDO, Arc::clone(&fonts.icons))
-                    .on_click(move || click.borrow_mut().resume_training()),
-            ),
+            Box::new(Tooltip::new(
+                Box::new(
+                    Button::new("Resume Training", Arc::clone(&fonts.regular))
+                        .with_ghost().with_active_fn(|| false)
+                        .with_compact()
+                        .with_icon(icon::UNDO, Arc::clone(&fonts.icons))
+                        .on_click(move || click.borrow_mut().resume_training()),
+                ),
+                help::RESUME_TRAINING,
+                Arc::clone(&fonts.regular),
+            )),
         )));
     }
     // Progress sheet (bump the generation so the sheet re-queries the
@@ -158,25 +186,30 @@ pub fn build_bottom_bar(
                 }),
         ));
     }
-    // About (help "How this trainer works — the skills, the vocabulary,
-    // the modes").
+    // About.
     {
         let show_about = Rc::clone(&cells.show_about);
-        row = row.add(Box::new(
-            Button::new("About", Arc::clone(&fonts.regular))
-                .with_ghost().with_active_fn(|| false)
-                .with_compact()
-                .with_icon(icon::QUESTION_CIRCLE, Arc::clone(&fonts.icons))
-                .on_click(move || open_cell(&show_about)),
-        ));
+        row = row.add(Box::new(Tooltip::new(
+            Box::new(
+                Button::new("About", Arc::clone(&fonts.regular))
+                    .with_ghost().with_active_fn(|| false)
+                    .with_compact()
+                    .with_icon(icon::QUESTION_CIRCLE, Arc::clone(&fonts.icons))
+                    .on_click(move || open_cell(&show_about)),
+            ),
+            help::ABOUT,
+            Arc::clone(&fonts.regular),
+        )));
     }
 
     // `.background(.bar)` + `.padding(h14, v8)`, capped at the bar height
     // (without the cap a container child of a FlexColumn expands to the
-    // full available height).
+    // full available height). The bar material reads as a light gray a
+    // shade darker than the window — enough that the bar separates from
+    // the page above it.
     Box::new(
         Container::new()
-            .with_background(Color::rgba(0.5, 0.5, 0.5, 0.06))
+            .with_background(Color::rgba(0.5, 0.5, 0.5, 0.11))
             .with_inner_padding(Insets {
                 left: 14.0,
                 right: 14.0,

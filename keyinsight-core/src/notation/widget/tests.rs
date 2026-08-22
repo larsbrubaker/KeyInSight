@@ -385,3 +385,61 @@ fn follow_top_forces_the_fitted_view_and_freezes_the_scroll() {
     paint(&mut widget);
     assert_eq!(widget.scroll_offset(), 0.0);
 }
+
+#[test]
+fn playback_follow_glides_the_page_along_with_the_cursor() {
+    // Hear It on a paged piece: the cursor is painted by override, never
+    // by `Current` states, so the follow itself must drive ensureVisible.
+    let clock = Rc::new(std::cell::Cell::new(10.0));
+    let (renderer, ids) = long_piece();
+    let (mut widget, controller) = widget_for(
+        &renderer,
+        NotationFit::Fit,
+        (700.0, 300.0),
+        Rc::clone(&clock),
+    );
+    let scale = widget.page_scale().unwrap();
+    paint(&mut widget);
+    let first = ids[0].clone();
+    let far = note_on_system(&renderer, &ids, system_past(&renderer, 400.0 / scale));
+    let (_, far_system) = note_system(&renderer, &far);
+    let far_top = renderer
+        .borrow()
+        .toolkit()
+        .current_layout()
+        .unwrap()
+        .systems[far_system]
+        .staff_top;
+    controller.borrow_mut().follow_schedule(
+        vec![vec![first.clone()], vec![far.clone()]],
+        vec![0.0, 1.0],
+        10.0,
+    );
+    // Group 0: the first system is already in view — no motion.
+    paint(&mut widget);
+    assert_eq!(controller.borrow().follow_log(), [0]);
+    assert!(!widget.scroll.is_gliding());
+    assert_eq!(widget.scroll_offset(), 0.0);
+    // Group 1 lands below the band: the page glides its system to 18%.
+    clock.set(11.0);
+    paint(&mut widget);
+    assert_eq!(controller.borrow().follow_log(), [0, 1]);
+    assert!(widget.scroll.is_gliding());
+    assert_eq!(
+        widget.scroll.target(),
+        (far_top * scale - 300.0 * 0.18).round()
+    );
+    clock.set(11.5);
+    paint(&mut widget);
+    assert!(!widget.scroll.is_gliding());
+    assert_eq!(widget.scroll_offset(), (far_top * scale - 300.0 * 0.18).round());
+    // A wheel during playback hands control to the user for the rest of
+    // the cursor's system, exactly like a `Current` note would.
+    widget.on_event(&Event::MouseWheel {
+        pos: Point::new(50.0, 50.0),
+        delta_y: 2.0,
+        delta_x: 0.0,
+        modifiers: Modifiers::default(),
+    });
+    assert_eq!(controller.borrow().user_scroll_system(), Some(far_system));
+}

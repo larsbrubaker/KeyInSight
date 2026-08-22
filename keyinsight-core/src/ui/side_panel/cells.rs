@@ -166,6 +166,26 @@ pub fn engine_state_cell(
     cell
 }
 
+/// A `Cell<usize>` kept in sync with an engine-derived index once per
+/// frame — the selection cell of a `SegmentedControl` picker (the SwiftUI
+/// `Picker(selection: Binding(get: { engine.… }))`).
+pub fn engine_index_cell(
+    engine: &Engine,
+    index: impl Fn(&SessionEngine) -> usize + 'static,
+) -> Rc<Cell<usize>> {
+    let cell = Rc::new(Cell::new(index(&engine.borrow())));
+    let sync = Rc::clone(&cell);
+    register_refresher(Box::new(move |engine| {
+        sync.set(index(engine));
+    }));
+    cell
+}
+
+/// `case .loading` — the spinner + "Preparing…" row.
+pub fn loading_cell(engine: &Engine) -> Rc<Cell<bool>> {
+    engine_state_cell(engine, |e| *e.phase() == Phase::Loading)
+}
+
 /// Per-frame refresh plumbing: closures evaluated once per frame by the
 /// root widget (see `ui/app.rs`).
 type CellRefresher = Box<dyn Fn(&SessionEngine)>;

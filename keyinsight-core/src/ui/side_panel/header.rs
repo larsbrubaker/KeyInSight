@@ -5,10 +5,11 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use agg_gui::widgets::{Button, Conditional, FlexColumn, FlexRow};
+use agg_gui::widgets::{Button, Conditional, FlexColumn, FlexRow, Tooltip};
 
 use crate::engine::SessionEngine;
 use crate::ui::fonts::{icon, size, UiFonts};
+use crate::ui::help;
 use crate::ui::{palette, DynamicLabel, InfoRow, InfoRows};
 
 use super::cells::replay_start_cell;
@@ -100,16 +101,19 @@ pub(super) fn header(engine: &Engine, fonts: &UiFonts) -> FlexColumn {
                 })),
                 1.0,
             )
-            .add(Box::new(
-                // `.buttonStyle(.plain)` icon button, secondary ink;
-                // help "Back to the top of the piece".
-                Button::new("", Arc::clone(&fonts.regular))
-                    .with_ghost()
-                    .with_active_fn(|| false)
-                    .with_compact()
-                    .with_icon(icon::XMARK_CIRCLE, Arc::clone(&fonts.icons))
-                    .on_click(move || clear.borrow_mut().clear_replay_start()),
-            ));
+            .add(Box::new(Tooltip::new(
+                // `.buttonStyle(.plain)` icon button, secondary ink.
+                Box::new(
+                    Button::new("", Arc::clone(&fonts.regular))
+                        .with_ghost()
+                        .with_active_fn(|| false)
+                        .with_compact()
+                        .with_icon(icon::XMARK_CIRCLE, Arc::clone(&fonts.icons))
+                        .on_click(move || clear.borrow_mut().clear_replay_start()),
+                ),
+                help::CLEAR_REPLAY_START,
+                Arc::clone(&fonts.regular),
+            )));
         Conditional::new(visible, Box::new(row))
     };
     let info = {

@@ -215,7 +215,10 @@ pub fn build_keyinsight_app<P: KeyInSightPlatform>(
 ) -> (App, KeyInSightHandles) {
     // KeyInSight is a light-themed app on every platform — sheet music is
     // black ink on a light page, and the chrome follows (see CLAUDE.md).
-    agg_gui::set_visuals(agg_gui::Visuals::light());
+    // The accent is macOS's system blue (`Color.accentColor`), so the
+    // prominent buttons, segmented pickers, and focus rings share the one
+    // blue the Swift app has.
+    agg_gui::set_visuals(agg_gui::Visuals::light().with_accent(crate::ui::palette::ACCENT));
 
     let platform: SharedPlatform = Rc::new(platform);
     let clock = host_clock();

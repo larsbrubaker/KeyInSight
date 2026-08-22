@@ -10,6 +10,10 @@ pub const RED: Color = Color::from_rgb8(0xFF, 0x3B, 0x30);
 pub const ORANGE: Color = Color::from_rgb8(0xFF, 0x95, 0x00);
 /// `Color.blue` — octave-follow notices, unlocks, count-in.
 pub const BLUE: Color = Color::from_rgb8(0x00, 0x7A, 0xFF);
+/// `Color.accentColor` — macOS's system blue: the prominent buttons, the
+/// selected picker segment, focus rings. The app's agg-gui `Visuals` take
+/// this accent (`ui/app.rs`) so only one blue exists on screen.
+pub const ACCENT: Color = BLUE;
 /// `Color.green` — mastered items, clean runs, mic level.
 pub const GREEN: Color = Color::from_rgb8(0x28, 0xCD, 0x41);
 /// `Color.gray.opacity(0.5)` — locked items in the heat map and legend.

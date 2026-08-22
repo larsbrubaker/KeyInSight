@@ -141,25 +141,30 @@ fn build_dialog(
                 let buttons = FlexRow::new()
                     .with_gap(8.0)
                     .add_flex(Box::new(crate::ui::hspacer()), 1.0)
+                    // The alert's cancel role: Esc.
                     .add(Box::new(
                         Button::new("Cancel", Arc::clone(&fonts.regular))
                             .with_subtle().with_active_fn(|| false)
+                            .with_cancel_action()
                             .on_click(move || {
                                 cancel_visible.set(false);
                                 agg_gui::animation::request_draw();
                             }),
                     ))
+                    // The alert's default button: Return (the focused text
+                    // field commits through `on_enter` first, so no double
+                    // fire).
                     .add(Box::new(
-                        Button::new(commit_label, Arc::clone(&fonts.regular)).on_click(
-                            move || {
+                        Button::new(commit_label, Arc::clone(&fonts.regular))
+                            .with_default_action()
+                            .on_click(move || {
                                 let text = buffer.borrow().trim().to_string();
                                 if !text.is_empty() {
                                     commit(&text);
                                 }
                                 commit_visible.set(false);
                                 agg_gui::animation::request_draw();
-                            },
-                        ),
+                            }),
                     ));
                 column = column.add(Box::new(buttons));
             }

@@ -9,6 +9,7 @@ pub(crate) mod app;
 pub(crate) mod bottom_bar;
 mod dynamic_label;
 pub(crate) mod fonts;
+pub(crate) mod help;
 mod info_rows;
 mod keyboard_layout;
 mod level_meter;

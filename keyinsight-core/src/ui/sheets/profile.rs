@@ -64,9 +64,11 @@ pub fn build_profile_sheet(
             ))
             .add_flex(Box::new(crate::ui::hspacer()), 1.0)
             .add(Box::new(
+                // `.keyboardShortcut(.cancelAction)`: Esc closes.
                 Button::new("Done", Arc::clone(&fonts.regular))
                     .with_subtle()
                     .with_active_fn(|| false)
+                    .with_cancel_action()
                     .on_click(move || {
                         close.set(false);
                         agg_gui::animation::request_draw();

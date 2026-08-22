@@ -21,7 +21,7 @@ use agg_gui::layout_props::Insets;
 use agg_gui::widget::Widget;
 use agg_gui::widgets::{
     Button, ComboBox, Conditional, Container, FlexColumn, FlexRow, Label, LabelAlign, ModalSheet,
-    Padding, Rebuilder, ScrollView, Separator, SizedBox, Spacer, TextField,
+    Padding, Rebuilder, ScrollView, SegmentedControl, Separator, SizedBox, Spacer, TextField,
 };
 
 use crate::score::{MusicXmlImporter, RepertoireLibrary, RepertoirePiece};
@@ -229,14 +229,24 @@ fn header(
     }
     let close = Rc::clone(visible);
     header.add(Box::new(
+        // `.keyboardShortcut(.cancelAction)`: Esc closes.
         Button::new("Done", Arc::clone(&fonts.regular))
             .with_subtle()
             .with_active_fn(|| false)
+            .with_cancel_action()
             .on_click(move || {
                 close.set(false);
                 agg_gui::animation::request_draw();
             }),
     ))
+}
+
+/// Segment index of a hands filter in `HandsFilter::ALL`.
+fn hands_index(hands: HandsFilter) -> usize {
+    HandsFilter::ALL
+        .iter()
+        .position(|h| *h == hands)
+        .unwrap_or(0)
 }
 
 /// `HStack(spacing: 10) { search box; hands picker; Sort picker }`,
@@ -245,24 +255,23 @@ fn filter_bar(fonts: &UiFonts, filter: &Rc<Filter>) -> Padding {
     let mut bar = FlexRow::new().with_gap(10.0);
     bar = bar.add_flex(Box::new(search_box(fonts, filter)), 1.0);
 
-    // Segmented hands filter: All | One hand | Two hands.
-    let mut hands_row = FlexRow::new().with_gap(6.0).with_fit_width(true);
-    for hands in HandsFilter::ALL {
-        let active = Rc::clone(&filter.hands);
+    // `Picker("", selection: $handsFilter).pickerStyle(.segmented)
+    // .fixedSize()`: All | One hand | Two hands at its natural width. The
+    // filter's `hands` cell is the model; the control's index cell maps
+    // through `HandsFilter::ALL` (the filter only changes here).
+    {
+        let selected = Rc::new(Cell::new(hands_index(filter.hands.get())));
         let click = Rc::clone(filter);
-        hands_row = hands_row.add(Box::new(
-            Button::new(hands.raw_value(), Arc::clone(&fonts.regular))
-                .with_subtle()
-                .with_compact()
-                .with_font_size(size::CALLOUT)
-                .with_active_fn(move || active.get() == hands)
-                .on_click(move || {
-                    click.hands.set(hands);
+        let labels: Vec<&str> = HandsFilter::ALL.iter().map(|h| h.raw_value()).collect();
+        bar = bar.add(Box::new(
+            SegmentedControl::new(labels, selected, Arc::clone(&fonts.regular)).on_change(
+                move |index| {
+                    click.hands.set(HandsFilter::ALL[index]);
                     click.changed();
-                }),
+                },
+            ),
         ));
     }
-    bar = bar.add(Box::new(hands_row));
 
     // `Picker("Sort", …)` — label + menu.
     bar = bar.add(Box::new(
@@ -474,7 +483,19 @@ fn play_button(
 
 #[cfg(test)]
 mod tests {
-    use super::{Cell, Filter, Rc};
+    use super::{hands_index, Cell, Filter, HandsFilter, Rc};
+
+    /// The segmented filter's index cell maps through `HandsFilter::ALL`
+    /// both ways.
+    #[test]
+    fn hands_segments_round_trip() {
+        let labels: Vec<&str> = HandsFilter::ALL.iter().map(|h| h.raw_value()).collect();
+        assert_eq!(labels, ["All", "One hand", "Two hands"]);
+        for (i, hands) in HandsFilter::ALL.iter().enumerate() {
+            assert_eq!(hands_index(*hands), i);
+            assert_eq!(HandsFilter::ALL[hands_index(*hands)], *hands);
+        }
+    }
 
     /// Opening the sheet rebuilds the list (fresh stats lines), as does a
     /// filter change.

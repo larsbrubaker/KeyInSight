@@ -366,6 +366,10 @@ impl NotationWidget {
             agg_gui::animation::request_draw();
         }
 
+        // The follow cursor first: reaching a new group queues its first
+        // id for the same ensureVisible path a `Current` note takes, so
+        // the Hear It playback glides the page along.
+        let follow_ids = self.controller.borrow_mut().follow_ids_at(now);
         let pending = self.controller.borrow_mut().take_pending_visible();
         if let Some(id) = pending {
             match page_scale {
@@ -391,13 +395,7 @@ impl NotationWidget {
                 }
             }
         }
-        let (follow_ids, slide_offset) = {
-            let mut controller = self.controller.borrow_mut();
-            (
-                controller.follow_ids_at(now),
-                controller.slide_offset_at(now),
-            )
-        };
+        let slide_offset = self.controller.borrow_mut().slide_offset_at(now);
         if self.controller.borrow().is_following() {
             agg_gui::animation::request_draw(); // keep the cursor moving
         }

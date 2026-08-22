@@ -86,6 +86,11 @@ pub struct NotationController {
     follow: Option<FollowSchedule>,
     /// Painted follow indices (the Swift page's `followLog` demo audit).
     follow_log: Vec<usize>,
+    /// The follow group the cursor is on right now (`None` between
+    /// schedules): the page treats it as the current system while a
+    /// playback runs, since the engine paints the cursor by override
+    /// instead of `Current` states.
+    follow_group: Option<usize>,
     /// Called when the pointer hovers a notation element: (kind, id).
     /// Fires with empty strings when the hover ends.
     pub on_inspect: Option<InspectCallback>,
@@ -124,6 +129,7 @@ impl NotationController {
             ticks: Vec::new(),
             follow: None,
             follow_log: Vec::new(),
+            follow_group: None,
             on_inspect: None,
             on_note_click: None,
             last_hover_key: RefCell::new(String::new()),
@@ -142,6 +148,7 @@ impl NotationController {
         self.ghost = None;
         self.ticks.clear();
         self.follow = None;
+        self.follow_group = None;
         self.lane.reset();
         self.pending_visible = None;
         self.clear_user_scroll();
@@ -206,11 +213,13 @@ impl NotationController {
             started_at: now,
         });
         self.follow_log.clear();
+        self.follow_group = None;
         agg_gui::animation::request_draw();
     }
 
     pub fn cancel_follow(&mut self) {
         self.follow = None;
+        self.follow_group = None;
         agg_gui::animation::request_draw();
     }
 
@@ -220,6 +229,9 @@ impl NotationController {
 
     /// The follow group active at `now`, if any; logs newly reached
     /// indices (the demo audit). Returns the ids to paint as current.
+    /// Reaching a new group also queues its first id for `ensureVisible`
+    /// — the Swift follow loop `setState(id, 'current')`s each group, so
+    /// a paged piece glides along under the playback cursor.
     pub fn follow_ids_at(&mut self, now: f64) -> Option<Vec<String>> {
         let follow = self.follow.as_ref()?;
         let t = now - follow.started_at;
@@ -232,10 +244,28 @@ impl NotationController {
             }
         }
         let index = index?;
+        let group = follow.id_groups[index].clone();
         if self.follow_log.last() != Some(&index) {
             self.follow_log.push(index);
         }
-        Some(self.follow.as_ref()?.id_groups[index].clone())
+        if self.follow_group != Some(index) {
+            self.follow_group = Some(index);
+            if let Some(first) = group.first() {
+                self.pending_visible = Some(first.clone());
+            }
+        }
+        Some(group)
+    }
+
+    /// The first id of the follow group the cursor is on, if a playback
+    /// is running.
+    fn follow_cursor_id(&self) -> Option<String> {
+        let follow = self.follow.as_ref()?;
+        follow
+            .id_groups
+            .get(self.follow_group?)?
+            .first()
+            .cloned()
     }
 
     /// The note indices the follow cursor actually painted (demo audit).
@@ -315,6 +345,11 @@ impl NotationController {
     /// follow stays off while the cursor remains on that system and
     /// re-engages when it enters a different one. Follow-top (survival)
     /// slides by transform instead, so this is always `None` there.
+    ///
+    /// The system rect is the [`SystemSpan`] — the top staff line to the
+    /// lowest staff line — not the Swift page's full `g.system` ink box
+    /// (which also spans ledger lines, stems, and text above/below the
+    /// staves), so the band test runs a few px tighter than the page's.
     pub fn follow_scroll_target(
         &mut self,
         id: &str,
@@ -347,16 +382,19 @@ impl NotationController {
     }
 
     /// Manual wheel/trackbar input hands scroll control to the user for
-    /// the remainder of the current system (`userScrollSystem`). With no
-    /// current note there is nothing to hold, so the next cursor move
-    /// re-engages at once (the page's `document.body` placeholder).
+    /// the remainder of the current system (`userScrollSystem`). During a
+    /// playback the follow cursor's group is the current note; otherwise
+    /// the `Current`-state note. With no current note there is nothing to
+    /// hold, so the next cursor move re-engages at once (the page's
+    /// `document.body` placeholder).
     pub fn note_user_scroll(&mut self) {
-        let current = self
-            .states
-            .iter()
-            .filter(|(_, &state)| state == NoteState::Current)
-            .map(|(id, _)| id.clone())
-            .min();
+        let current = self.follow_cursor_id().or_else(|| {
+            self.states
+                .iter()
+                .filter(|(_, &state)| state == NoteState::Current)
+                .map(|(id, _)| id.clone())
+                .min()
+        });
         self.user_scroll_system = current.and_then(|id| self.system_of(&id)).map(|s| s.index);
     }
 
@@ -495,10 +533,18 @@ mod tests {
             100.0,
         );
         assert_eq!(c.follow_ids_at(100.0), Some(vec!["a".to_string()]));
+        // Each newly reached group queues its first id for ensureVisible,
+        // once (the Swift follow loop's setState 'current' per group).
+        assert_eq!(c.take_pending_visible().as_deref(), Some("a"));
+        assert_eq!(c.follow_ids_at(100.5), Some(vec!["a".to_string()]));
+        assert!(c.take_pending_visible().is_none());
         assert_eq!(c.follow_ids_at(101.5), Some(vec!["b".to_string()]));
+        assert_eq!(c.take_pending_visible().as_deref(), Some("b"));
         assert_eq!(c.follow_ids_at(102.5), Some(vec!["c".to_string()]));
+        assert_eq!(c.follow_cursor_id().as_deref(), Some("c"));
         assert_eq!(c.follow_log(), [0, 1, 2]);
         c.cancel_follow();
         assert!(c.follow_ids_at(103.0).is_none());
+        assert!(c.follow_cursor_id().is_none());
     }
 }
