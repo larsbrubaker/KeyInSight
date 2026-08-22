@@ -10,12 +10,22 @@ KeyInSight: `851e359` (`--screenshot`, sheet launch hooks), `eaeb339` (Swift
 reference corpus + capture tools), `a14132b` (verovio-rust pin → `fc6666b`),
 `f9330a2` (Library sheet layout fix), `904d55e` (`--piece` regression test),
 `2c56e0d` (headless layout tests for the other sheets), `58497ac` (labeled
-pickers, tabular digits). agg-gui: `149db0d` (`with_screenshot`), `aac93b8`
-(`Font::with_tabular_digits`). verovio-rust: `fc6666b` (golden gate from the
+pickers, tabular digits), `cf7a68d` (Return no longer leaks past the
+Calibration sheet; UI item 1 done), `e18022a` (notation page styling; UI item 3
+done except the follow-ups below), `30fc514` (review follow-ups: content-sized
+picker tracks, `--screenshot` arg errors, shared harness, bin tests on).
+agg-gui: `149db0d` (`with_screenshot`), `aac93b8` (`Font::with_tabular_digits`),
+`8d665dc` (modal owns Enter/Escape), `3e989d5` (15 s capture budget, shared
+font bytes). **Visually unverified** (screen was locked when they landed —
+run `keyinsight-native --screenshot` for `--survival`, `--piece minuet-in-g`,
+plain, and compare to `reference/swift/window/`): `e18022a` page padding /
+ghost / ticks and `30fc514` picker track widths (Pacing/Hands are 27/8 px
+narrower than Swift — agg-gui SegmentedControl padding/min width if wanted). verovio-rust: `fc6666b` (golden gate from the
 submodule layout, per-category `KNOWN_DEVIATIONS`, CI parity job).
 **Nothing pushed yet** — push agg-gui first (KeyInSight CI builds against it),
-then verovio-rust, then KeyInSight. A reviewer pass over these commits was
-running at the end of the session — check for its findings.
+then verovio-rust, then KeyInSight. The reviewer pass over 851e359..58497ac is
+done and its findings landed in 30fc514 / cf7a68d; e18022a and 30fc514
+themselves are unreviewed.
 
 Findings parked for later (not in the numbered lists):
 - `ui/app.rs` ~288: the session seed is `host_now()*1000` at build time, ≈0 on
@@ -102,12 +112,7 @@ Done: accent `#007AFF`, segmented pickers, tooltips (all but two), full-width
 buttons where Swift has `.frame(maxWidth:.infinity)`, default/cancel actions,
 spinner, Profile toggle order, level-meter palette, bottom-bar surface.
 
-1. **Return leaks past the Calibration sheet** (review finding): the sheet is
-   `with_key_passthrough(true)`; while Start/Done are hidden, Enter reaches the
-   side-panel default (Next Exercise / Replay / Run It Back) behind the modal.
-   Fix in agg-gui (`on_key_down` must not run `dispatch_root_action` while a
-   modal is active) or give the calibration sheet a swallowing
-   `with_default_action`.
+1. ~~Return leaks past the Calibration sheet~~ — done (`cf7a68d`, agg-gui `8d665dc`).
 2. **InfoRows wrapping** (`ui/info_rows.rs`): wrap long status/summary rows with a
    hanging indent (they clip at 272 px today), per-branch row gap (5 generic /
    6 survival+drill), `ICON_SCALE` 0.85 → 1.0, count-in "Ready… N" + BPM on one
@@ -115,12 +120,8 @@ spinner, Profile toggle order, level-meter palette, bottom-bar surface.
    (`help::FOLLOWING_OCTAVE`, `help::STATS_SUPPRESSED`) — needs per-row hover
    targets or an agg-gui hook to submit a tooltip from a custom widget.
    (A partial split of info_rows.rs into a directory was discarded at stop.)
-3. **Notation page styling** (`NotationController.swift` CSS): page padding
-   16 v / 24 h; ghost note as a −20° oval, 2.5 px `#8a8a8a` stroke,
-   `rgba(138,138,138,0.25)` fill; ghost ledger lines (2 px `#9a9a9a`,
-   width headWidth×1.8, every space beyond the staff); ticks as bold 15 px
-   ◂/▸ `#b8860b` 24 px above the notehead, 6 px left; verify HIT_PAD 10 and the
-   8 inspect kinds.
+3. ~~Notation page styling~~ — done (`e18022a`); remaining: the six
+   un-emitted inspect kinds, `HIT_PAD` units (see parked findings above).
 4. Sheet chrome (needs agg-gui): ModalSheet min/ideal/max sizing + present/dismiss
    animation (Progress 780–1100×640–900, Library 640–900×440–800, About
    560–760×480–820); List/row chrome (separators, section headers) for Progress
