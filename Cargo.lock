@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "agg-gui-shell"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "agg-gui",
  "agg-gui-wgpu",
@@ -62,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "agg-gui-wgpu"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "agg-gui",
  "agg-rust",

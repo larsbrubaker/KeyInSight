@@ -18,8 +18,8 @@ repository = "https://github.com/larsbrubaker/KeyInSight"
 agg-gui = "0.5"
 # The published wgpu renderer and native winit shell (extracted from the old
 # demo-wgpu / native_shell demo code — see agg-gui/docs/porting_update.md).
-agg-gui-wgpu = "0.5.1"
-agg-gui-shell = "0.5"
+agg-gui-wgpu = "0.5.2"
+agg-gui-shell = "0.5.1"
 # The browser shell (canvas + rAF loop + DOM input) has no published crate
 # yet — it stays a repo-only module of demo-wgpu, so the wasm shim keeps this
 # path dep purely for `demo_wgpu::web_shell`.
