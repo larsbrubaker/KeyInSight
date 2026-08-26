@@ -2,7 +2,7 @@
 //!
 //! Thinnest possible desktop shim: everything platform-generic (winit
 //! window and event loop, wgpu surface, input forwarding, frame painting)
-//! lives in `demo_wgpu::native_shell`. This file contributes only what is
+//! lives in the published `agg-gui-shell` crate. This file contributes only what is
 //! genuinely specific to KeyInSight on desktop: the [`KeyInSightPlatform`]
 //! implementation (file-backed storage under the OS app-data directory,
 //! MIDI via midir, audio out + mic via cpal — see
@@ -26,9 +26,10 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+use agg_gui_shell::{Frame, ShellConfig, ShellHost};
 use keyinsight_core::audio::AudioOut;
 use keyinsight_core::persistence::Storage;
-use keyinsight_core::{build_keyinsight_app, KeyInSightPlatform, UiFonts};
+use keyinsight_core::{build_keyinsight_app, KeyInSightHandles, KeyInSightPlatform, UiFonts};
 
 /// File-backed storage in the platform app-data directory (the port of
 /// `AppDatabase.onDisk()`'s Application Support path).
@@ -264,10 +265,13 @@ fn main() {
     }
 
     // The Swift TrainingView's minWidth 1180 / minHeight 520.
-    let mut config = demo_wgpu::NativeShellConfig::new("KeyInSight", (1180.0, 640.0))
-        .with_min_size(1180.0, 520.0);
+    let mut config = ShellConfig::new("KeyInSight")
+        .with_logical_size(1180.0, 640.0)
+        .with_min_logical_size(1180.0, 520.0)
+        .with_device_label("keyinsight-native");
     // Deterministic capture (`--screenshot <path>`): paint a few settle
-    // frames, write the window as a PNG, and exit.
+    // frames, write the window as a PNG, and exit. The shell forces the
+    // surface's COPY_SRC usage on when a screenshot is configured.
     match screenshot_arg(&args) {
         ScreenshotArg::Path(path) => {
             config = config.with_screenshot(path, SCREENSHOT_SETTLE_FRAMES);
@@ -282,13 +286,27 @@ fn main() {
         ScreenshotArg::Absent => {}
     }
 
-    demo_wgpu::native_shell::run(
-        config,
-        app,
-        // Advance the engine every painted frame (input queue, deferred
-        // actions, metronome sweep).
-        move || handles.tick(),
-    );
+    if let Err(err) = agg_gui_shell::run(config, move |_init| Ok((app, EngineTickHost { handles })))
+    {
+        // Same observable behaviour as the old shell: report and exit 1
+        // (a failed --screenshot capture lands here too).
+        eprintln!("keyinsight-native: {err}");
+        std::process::exit(1);
+    }
+}
+
+/// The app side of `agg-gui-shell`: advance the engine every painted frame
+/// (input queue, deferred actions, metronome sweep). Everything else —
+/// window, input, present, surface/device recovery, screenshots — is the
+/// shell's.
+struct EngineTickHost {
+    handles: KeyInSightHandles,
+}
+
+impl ShellHost for EngineTickHost {
+    fn on_frame(&mut self, _app: &mut agg_gui::App, _frame: &Frame) {
+        self.handles.tick();
+    }
 }
 
 /// `keyinsight-native --demo`: the whole training loop, scripted, against

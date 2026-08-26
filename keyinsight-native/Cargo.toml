@@ -6,7 +6,7 @@ rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Native desktop shell (winit + wgpu via demo-wgpu) for the KeyInSight port."
+description = "Native desktop shell (winit + wgpu via agg-gui-shell) for the KeyInSight port."
 
 [[bin]]
 name = "keyinsight-native"
@@ -15,9 +15,9 @@ path = "src/main.rs"
 [dependencies]
 keyinsight-core = { path = "../keyinsight-core" }
 agg-gui = { workspace = true, features = ["clipboard"] }
-# The winit event loop, wgpu surface, and input plumbing all live in
-# demo-wgpu's `native_shell` — this crate is only the app-specific glue.
-demo-wgpu = { workspace = true }
+# The winit event loop, wgpu surface, and input plumbing all live in the
+# published agg-gui-shell — this crate is only the app-specific glue.
+agg-gui-shell = { workspace = true }
 rfd = "0.17.2"
 cpal = "0.15"
 # Display-sleep guard while an exercise runs (`DisplaySleepGuard.swift`).

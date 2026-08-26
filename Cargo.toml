@@ -8,13 +8,21 @@ default-members = ["keyinsight-core", "keyinsight-native"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.78"
+# wgpu 29 (via agg-gui-wgpu / agg-gui-shell) requires 1.87.
+rust-version = "1.87"
 authors = ["Lars Brubaker <larsbrubaker@matterhackers.com>"]
 license = "MIT"
 repository = "https://github.com/larsbrubaker/KeyInSight"
 
 [workspace.dependencies]
-agg-gui = "0.4"
+agg-gui = "0.5"
+# The published wgpu renderer and native winit shell (extracted from the old
+# demo-wgpu / native_shell demo code — see agg-gui/docs/porting_update.md).
+agg-gui-wgpu = "0.5.1"
+agg-gui-shell = "0.5"
+# The browser shell (canvas + rAF loop + DOM input) has no published crate
+# yet — it stays a repo-only module of demo-wgpu, so the wasm shim keeps this
+# path dep purely for `demo_wgpu::web_shell`.
 demo-wgpu = { path = "../agg-gui/demo-wgpu", default-features = false }
 # Music engraving (LGPL-3.0, its own repo — see docs/platform-substitutions.md).
 # Pinned git submodule at ./verovio-rust (its own repo for license separation).
@@ -31,12 +39,19 @@ web-time = "1"
 # ---------------------------------------------------------------------------
 [patch.crates-io]
 agg-gui = { path = "../agg-gui/agg-gui" }
+agg-gui-wgpu = { path = "../agg-gui/agg-gui-wgpu" }
+agg-gui-shell = { path = "../agg-gui/agg-gui-shell" }
 
 # ---------------------------------------------------------------------------
 # Optimize dependencies in debug builds. The agg-rust software rasterizer is
 # expensive unoptimized — without this dev frame time drops sharply. Mirrors
-# agg-gui's own workspace profile.
+# agg-gui's own workspace profile. agg-gui-wgpu's inlined hot path
+# monomorphizes into our crates, so the workspace itself needs opt-level 1
+# too (at 0 frame times are ~10x worse — see agg-gui/docs/porting_update.md).
 # ---------------------------------------------------------------------------
+[profile.dev]
+opt-level = 1
+
 [profile.dev.package."*"]
 opt-level = 2
 
