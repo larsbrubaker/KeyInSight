@@ -26,7 +26,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agg-gui"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "agg-rust",
  "arboard",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "agg-gui-shell"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "agg-gui",
  "agg-gui-wgpu",
@@ -61,12 +61,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "agg-gui-web-shell"
+version = "0.5.0"
+dependencies = [
+ "agg-gui",
+ "agg-gui-wgpu",
+ "console_error_panic_hook",
+ "js-sys",
+ "log",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+ "web-time",
+ "wgpu",
+]
+
+[[package]]
 name = "agg-gui-wgpu"
-version = "0.5.2"
+version = "0.5.3"
 dependencies = [
  "agg-gui",
  "agg-rust",
  "bytemuck",
+ "log",
  "pollster 0.3.0",
  "web-time",
  "wgpu",
@@ -955,15 +972,12 @@ version = "0.1.0"
 dependencies = [
  "agg-gui",
  "agg-gui-shell",
+ "agg-gui-web-shell",
  "agg-gui-wgpu",
  "agg-rust",
  "bytemuck",
- "console_error_panic_hook",
- "js-sys",
+ "log",
  "pollster 0.3.0",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
  "web-time",
  "wgpu",
 ]
